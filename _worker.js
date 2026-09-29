@@ -578,8 +578,10 @@ async function listSubs(env) {
             ...(cursor ? { cursor } : {})
         });
 
-        for (const item of page.keys) {
-            const data = await getSub(env, item.name.slice(SUB_PREFIX.length));
+        const values = await Promise.all(page.keys.map(item =>
+            getSub(env, item.name.slice(SUB_PREFIX.length))
+        ));
+        for (const data of values) {
             if (data) result.push(data);
         }
 
@@ -601,9 +603,10 @@ async function listTokens(env) {
             ...(cursor ? { cursor } : {})
         });
 
-        for (const item of page.keys) {
-            const token = item.name.slice(URL_PREFIX.length);
-            const data = await getToken(env, token);
+        const values = await Promise.all(page.keys.map(item =>
+            getToken(env, item.name.slice(URL_PREFIX.length))
+        ));
+        for (const data of values) {
             if (data) result.push(data);
         }
 
@@ -828,13 +831,12 @@ async function handleAdmin(request, env, runtime) {
 
                 // 删除 SUB 后，自动从所有 URL 的绑定列表移除
                 const tokens = await listTokens(env);
-                for (const item of tokens) {
-                    if (Array.isArray(item.subs) && item.subs.includes(id)) {
-                        item.subs = item.subs.filter(x => x !== id);
-                        item.updatedAt = new Date().toISOString();
-                        await env.KV.put(`${URL_PREFIX}${item.url}`, JSON.stringify(item));
-                    }
-                }
+                const affected = tokens.filter(item => Array.isArray(item.subs) && item.subs.includes(id));
+                await Promise.all(affected.map(item => {
+                    item.subs = item.subs.filter(x => x !== id);
+                    item.updatedAt = new Date().toISOString();
+                    return env.KV.put(`${URL_PREFIX}${item.url}`, JSON.stringify(item));
+                }));
 
                 return jsonResponse({ ok: true });
             }
@@ -1888,11 +1890,11 @@ function renderAdminPage(url, env, subs, tokens, settings, status) {
 <style>
 ${getToolStyles()}
 .sub-grid{display:grid;gap:10px}
-.sub-row{border:1px solid rgba(229,229,223,.6);border-radius:12px;padding:12px;background:rgba(255,255,255,.5)}
+.sub-row{border:1px solid rgba(229,229,223,.6);border-radius:12px;padding:12px;background:rgba(255,255,255,.5);color:inherit}
 .sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.sub-name{font-weight:700;font-size:15px}
+.sub-name{font-weight:700;font-size:15px;color:inherit}
 .sub-count{color:#888;font-size:12px;margin-top:3px}
-.source-box{margin-top:9px;padding:9px;border-radius:9px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto}
+.source-box{margin-top:9px;padding:9px;border-radius:9px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}
 .token-url{color:#1f4b99;word-break:break-all}
 .chip{display:inline-block;padding:3px 8px;margin:2px 3px 2px 0;border-radius:8px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}
 .check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}
@@ -1905,7 +1907,18 @@ ${getToolStyles()}
 .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .panel-head .section-title{margin-bottom:0}
 .config-value{margin-top:10px;padding:10px 12px;border:1px solid rgba(229,229,223,.7);border-radius:10px;background:rgba(250,250,250,.65);font-size:13px;word-break:break-all;white-space:pre-wrap}
-@media(prefers-color-scheme:dark){.config-value{background:rgba(0,0,0,.22);border-color:rgba(255,255,255,.1)}.edit-button{background:#111!important;border-color:#444!important}}
+@media(prefers-color-scheme:dark){
+.sub-row{background:rgba(30,30,30,.82);border-color:rgba(255,255,255,.12);color:#eee;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.sub-name{color:#f3f3f3}
+.sub-count{color:#aaa}
+.source-box{background:rgba(10,10,10,.55);border:1px solid rgba(255,255,255,.08);color:#ddd}
+.token-url{color:#64b5f6}
+.chip{background:rgba(100,181,246,.12);color:#90caf9}
+.check-list{background:rgba(20,20,20,.65);border-color:rgba(255,255,255,.12)}
+.check-item{color:#ddd}
+.config-value{background:rgba(0,0,0,.22);border-color:rgba(255,255,255,.1);color:#ddd}
+.edit-button{background:#111!important;border-color:#444!important}
+}
 @media(max-width:600px){.inline-row{grid-template-columns:1fr}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@keeex/qrcodejs-kx@1.0.2/qrcode.min.js"></script>
@@ -2322,7 +2335,8 @@ function editSub(id){
 }
 
 async function saveSubs(){
- const button=document.activeElement;
+ const button=document.querySelector('#subsModal button:not(.secondary)');
+ const status=document.getElementById('subSaveStatus');
  const payload={
    type:editingSub?'sub_update':'sub_create',
    id:editingSub,
@@ -2331,10 +2345,21 @@ async function saveSubs(){
    enabled:document.getElementById('sub-edit-enabled').checked
  };
 
+ button.disabled=true;
+ button.textContent='保存中...';
+ status.textContent='正在保存...';
  const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  const text=await res.text();
 
- if(!res.ok){showToast(text||'保存失败');return}
+ if(!res.ok){
+   button.disabled=false;
+   button.textContent='保存';
+   status.textContent=text||'保存失败';
+   showToast(text||'保存失败');
+   return;
+ }
+ status.textContent='保存成功，正在刷新...';
+ closeSubsModal();
  location.reload();
 }
 
@@ -2402,6 +2427,8 @@ function editUrl(token){
 
 async function saveUrl(){
  const selected=[...document.querySelectorAll('#url-sub-list input[type=checkbox]:checked')].map(x=>x.value);
+ const button=document.querySelector('#urlModal button:not(.secondary)');
+ const status=document.getElementById('urlSaveStatus');
 
  if(!selected.length){
    showToast('至少选择一个聚合节点');
@@ -2422,10 +2449,21 @@ async function saveUrl(){
    subs:selected
  };
 
+ button.disabled=true;
+ button.textContent='保存中...';
+ status.textContent='正在保存...';
  const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  const text=await res.text();
 
- if(!res.ok){showToast(text||'保存失败');return}
+ if(!res.ok){
+   button.disabled=false;
+   button.textContent='保存';
+   status.textContent=text||'保存失败';
+   showToast(text||'保存失败');
+   return;
+ }
+ status.textContent='保存成功，正在刷新...';
+ closeUrlModal();
  location.reload();
 }
 
