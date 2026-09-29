@@ -2130,11 +2130,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
 <a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
 </div>
-<button type="button" onclick="toggleSettingEdit('subApi')">编辑</button>
-</div>
-<div class="setting-edit hidden" id="setting-edit-subApi">
-<div class="field"><input id="setting-subApi" type="text" value="${escapeHTML(settings.subApi || '')}" placeholder="留空使用默认值"></div>
-<div class="actions"><button type="button" onclick="saveSetting('subApi',this)">保存</button><button type="button" class="secondary" onclick="toggleSettingEdit('subApi',false)">取消</button><span id="setting-status-subApi" class="muted"></span></div>
+<button type="button" onclick="openSettingModal('subApi')">编辑</button>
 </div>
 </section>
 
@@ -2146,11 +2142,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
 <a class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
 </div>
-<button type="button" onclick="toggleSettingEdit('subConfig')">编辑</button>
-</div>
-<div class="setting-edit hidden" id="setting-edit-subConfig">
-<div class="field"><textarea id="setting-subConfig" style="min-height:80px" placeholder="留空使用默认值">${escapeHTML(settings.subConfig || '')}</textarea></div>
-<div class="actions"><button type="button" onclick="saveSetting('subConfig',this)">保存</button><button type="button" class="secondary" onclick="toggleSettingEdit('subConfig',false)">取消</button><span id="setting-status-subConfig" class="muted"></span></div>
+<button type="button" onclick="openSettingModal('subConfig')">编辑</button>
 </div>
 </section>
 
@@ -2160,13 +2152,22 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <h2 class="section-title">节点屏蔽（NOADS）</h2>
 <div class="section-note" style="margin-top:8px;">${settings.noAds ? `已设置 ${settings.noAds.split(/[, \r\n]+/).filter(Boolean).length} 个屏蔽关键词` : '当前未设置屏蔽关键词'}</div>
 </div>
-<button type="button" onclick="toggleSettingEdit('noAds')">编辑</button>
-</div>
-<div class="setting-edit hidden" id="setting-edit-noAds">
-<div class="field"><textarea id="setting-noAds" style="min-height:80px" placeholder="示例: 加入TG群, 订阅YouTube频道, https://t.me ......">${escapeHTML(settings.noAds || '')}</textarea><div class="section-note">使用英文逗号、空格或换行分隔</div></div>
-<div class="actions"><button type="button" onclick="saveSetting('noAds',this)">保存</button><button type="button" class="secondary" onclick="toggleSettingEdit('noAds',false)">取消</button><span id="setting-status-noAds" class="muted"></span></div>
+<button type="button" onclick="openSettingModal('noAds')">编辑</button>
 </div>
 </section>
+
+<!-- 通用设置编辑 Modal：与 SUB / URL 使用相同的背景虚化弹窗机制 -->
+<div id="settingModal" class="modal-overlay" onclick="if(event.target===this)closeSettingModal()">
+<div class="modal-content">
+<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">⚙️ <span id="settingModalTitle">编辑设置</span></h2>
+<div id="settingModalBody"></div>
+<div class="actions" style="justify-content:flex-end;margin-top:24px;">
+<button type="button" class="secondary" onclick="closeSettingModal()">取消</button>
+<button type="button" onclick="saveSettingModal(this)">保存</button>
+</div>
+<span id="settingModalStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
+</div>
+</div>
 
 <div id="current-qrcode"></div>
 </main>
@@ -2257,24 +2258,50 @@ function saveConfig(button,type){
  });
 }
 
-function toggleSettingEdit(field, force){
- const box=document.getElementById('setting-edit-'+field);
- if(!box)return;
- const show = force === undefined ? box.classList.contains('hidden') : !!force;
- box.classList.toggle('hidden', !show);
- if(show){ const input=document.getElementById('setting-'+field); if(input) input.focus(); }
+let settingModalField='';
+
+function openSettingModal(field){
+ settingModalField=field;
+ const modal=document.getElementById('settingModal');
+ const title=document.getElementById('settingModalTitle');
+ const body=document.getElementById('settingModalBody');
+ const status=document.getElementById('settingModalStatus');
+ if(!modal||!title||!body)return;
+ status.textContent='';
+ status.style.color='';
+ const configs={
+   subApi:{title:'编辑订阅转换后端 SUBAPI',html:'<div class="field"><label>SUBAPI 地址</label><input id="setting-modal-input" type="text" value="'+escapeAttr(${JSON.stringify(settings.subApi || '')})+'" placeholder="留空使用默认值"></div>'},
+   subConfig:{title:'编辑订阅转换规则 SUBCONFIG',html:'<div class="field"><label>SUBCONFIG 地址</label><textarea id="setting-modal-input" style="min-height:120px" placeholder="留空使用默认值">'+escapeHTML(${JSON.stringify(settings.subConfig || '')})+'</textarea></div>'},
+   noAds:{title:'编辑节点屏蔽（NOADS）',html:'<div class="field"><label>屏蔽关键词</label><textarea id="setting-modal-input" style="min-height:160px" placeholder="示例: 加入TG群, 订阅YouTube频道, https://t.me ......">'+escapeHTML(${JSON.stringify(settings.noAds || '')})+'</textarea><div class="section-note">使用英文逗号、空格或换行分隔</div></div>'}
+ };
+ const item=configs[field];
+ if(!item)return;
+ title.textContent=item.title;
+ body.innerHTML=item.html;
+ modal.style.display='flex';
+ setTimeout(()=>document.getElementById('setting-modal-input')?.focus(),50);
 }
 
-async function saveSetting(field, button){
- const input=document.getElementById('setting-'+field);
- const status=document.getElementById('setting-status-'+field);
- if(!input||!status)return;
+function closeSettingModal(){
+ const modal=document.getElementById('settingModal');
+ if(modal)modal.style.display='none';
+ settingModalField='';
+}
+
+function escapeAttr(value){
+ return escapeHTML(value).replace(/\n/g,'&#10;').replace(/\r/g,'&#13;');
+}
+
+async function saveSettingModal(button){
+ const input=document.getElementById('setting-modal-input');
+ const status=document.getElementById('settingModalStatus');
+ if(!input||!settingModalField)return;
  button.disabled=true;
  const oldText=button.textContent;
  button.textContent='保存中...';
  status.textContent='';
  try{
-   const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'config_partial',field,value:input.value})});
+   const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'config_partial',field:settingModalField,value:input.value})});
    const msg=await res.text();
    if(!res.ok)throw new Error(msg||'保存失败');
    status.textContent='已保存';
