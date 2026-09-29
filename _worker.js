@@ -2155,7 +2155,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 </section>
 
 <!-- 通用设置编辑 Modal：与 SUB / URL 使用相同的背景虚化弹窗机制 -->
-<div id="settingModal" class="modal-overlay" onclick="if(event.target===this)closeSettingModal()">
+<div id="settingModal" class="modal-overlay" style="display:none;pointer-events:none;" onclick="if(event.target===this)closeSettingModal()">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">⚙️ <span id="settingModalTitle">编辑设置</span></h2>
 <div id="settingModalBody"></div>
@@ -2420,94 +2420,95 @@ function closeUrlModal(){hideModal('urlModal')}
 function switchUrlMode(){
  const mode=document.getElementById('url-edit-mode').value;
  const input=document.getElementById('url-edit-value');
- if(mode==='random'){
+ if(editingUrlValue){
    input.disabled=true;
-   input.value='';
- }else{
-   input.disabled=false;
-   input.focus();
+   return;
  }
+ input.disabled=mode!=='custom';
+ document.getElementById('urlModeNote').textContent=
+   mode==='random'
+   ? '随机 URL 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 URL。'
+   : '自定义 URL 只能使用字母、数字、下划线和短横线。';
 }
 
-function editUrl(url){
- const item=TOKENS.find(x=>x.url===url);
+function editUrl(token){
+ const item=TOKENS.find(x=>x.url===token);
  if(!item)return;
- editingUrlValue=url;
+ editingUrlValue=token;
  document.getElementById('urlModalTitle').textContent='编辑订阅链接';
  document.getElementById('url-edit-name').value=item.name||'';
  document.getElementById('url-edit-mode').value='custom';
- document.getElementById('url-edit-value').value=item.url;
+ document.getElementById('url-edit-value').value=item.url||'';
  document.getElementById('url-edit-value').disabled=false;
- renderUrlSubs(item.subs||[]);
+ document.getElementById('urlModeNote').textContent='URL 可以直接修改；保存后旧 URL 立即失效，新 URL 立即生效。';
  document.getElementById('urlSaveStatus').textContent='';
+ renderUrlSubs(item.subs||[]);
  showModal('urlModal');
 }
 
 async function saveUrl(){
- const button=document.activeElement;
- const mode=document.getElementById('url-edit-mode').value;
- const name=document.getElementById('url-edit-name').value.trim();
- const urlValue=document.getElementById('url-edit-value').value.trim();
+ const selected=[...document.querySelectorAll('#url-sub-list input[type=checkbox]:checked')].map(x=>x.value);
 
- const checkedSubs=[];
- document.querySelectorAll('#url-sub-list input[type="checkbox"]:checked').forEach(el=>{
-   checkedSubs.push(el.value);
- });
+ if(!selected.length){
+   showToast('至少选择一个聚合节点');
+   return;
+ }
 
- const payload={
-   type:editingUrlValue?'url_update':'url_create',
-   name:name,
-   subs:checkedSubs
+ const payload=editingUrlValue?{
+   type:'url_update',
+   oldUrl:editingUrlValue,
+   newUrl:document.getElementById('url-edit-value').value.trim(),
+   name:document.getElementById('url-edit-name').value.trim(),
+   subs:selected
+ }:{
+   type:'url_create',
+   name:document.getElementById('url-edit-name').value.trim(),
+   mode:document.getElementById('url-edit-mode').value,
+   url:document.getElementById('url-edit-value').value.trim(),
+   subs:selected
  };
 
- if(editingUrlValue){
-   payload.oldUrl=editingUrlValue;
-   payload.newUrl=urlValue;
- }else{
-   payload.mode=mode;
-   if(mode==='custom') payload.token=urlValue;
- }
+ const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const text=await res.text();
 
- button.disabled=true;
- const oldText=button.textContent;
- button.textContent='保存中...';
-
- try{
-   const res=await fetch(window.location.pathname,{
-     method:'POST',
-     headers:{'Content-Type':'application/json'},
-     body:JSON.stringify(payload)
-   });
-   const text=await res.text();
-   if(!res.ok) throw new Error(text||'保存失败');
-   location.reload();
- }catch(e){
-   const status=document.getElementById('urlSaveStatus');
-   status.textContent='保存失败: '+e.message;
-   status.style.color='#c62828';
-   button.disabled=false;
-   button.textContent=oldText;
- }
+ if(!res.ok){showToast(text||'保存失败');return}
+ location.reload();
 }
 
-async function deleteUrl(url){
- const item=TOKENS.find(x=>x.url===url);
+async function deleteUrl(token){
+ const item=TOKENS.find(x=>x.url===token);
  if(!item)return;
- if(!confirm('确定删除订阅链接“'+item.name+'”吗？'))return;
+ if(!confirm('确定删除“'+item.name+'”吗？'))return;
 
- try{
-   const res=await fetch(window.location.pathname,{
-     method:'POST',
-     headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({type:'url_delete',token:url})
-   });
-   const text=await res.text();
-   if(!res.ok) throw new Error(text||'删除失败');
-   location.reload();
- }catch(e){
-   showToast(e.message);
- }
+ const res=await fetch(window.location.pathname,{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({type:'url_delete',url:token})
+ });
+ const text=await res.text();
+
+ if(!res.ok){showToast(text||'删除失败');return}
+ location.reload();
 }
+
+switchFakeMode();
+
+// Direct event bindings: keep admin controls independent.
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-setting]').forEach(function (btn) {
+        btn.addEventListener('click', function () { openSettingModal(btn.getAttribute('data-setting')); });
+    });
+    var buttons = Array.from(document.querySelectorAll('button'));
+    var homeBtn = buttons.find(function (b) { return b.textContent.trim() === '🏠 主页'; });
+    var securityBtn = buttons.find(function (b) { return b.textContent.trim() === '🛡️ 安全'; });
+    var createSubBtn = buttons.find(function (b) { return b.textContent.trim() === '＋ 创建聚合节点'; });
+    var createUrlBtn = buttons.find(function (b) { return b.textContent.trim() === '＋ 创建订阅链接'; });
+    if (homeBtn) homeBtn.addEventListener('click', openFakeModal);
+    if (securityBtn) securityBtn.addEventListener('click', openSecurityModal);
+    if (createSubBtn) createSubBtn.addEventListener('click', openSubCreate);
+    if (createUrlBtn) createUrlBtn.addEventListener('click', openUrlCreate);
+});
+
 </script>
 </body>
 </html>`;
