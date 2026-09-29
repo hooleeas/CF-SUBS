@@ -40,7 +40,7 @@ let urls = [];
 
 // ================= 全局默认配置 =================
 const defaultSubConverter = "SUBAPI.cmliussss.net";
-const defaultSubConfig = "https://raw.githubusercontent.com/hooleeas/ACL4SSR/refs/heads/master/Clash/config/DIRECT_CHINA_AUTO_PING.ini";
+const defaultSubConfig = "https://raw.githubusercontent.com/hooleeas/ACL4SSR/refs/heads/master/Clash/config/China_Direct_Overseas_Proxy.ini";
 const defaultSubProtocol = "https";
 // ================================================
 
