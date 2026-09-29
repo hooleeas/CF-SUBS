@@ -2175,6 +2175,11 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <script>
 const SUBS = ${JSON.stringify(subs)};
 const TOKENS = ${JSON.stringify(tokens)};
+const SETTING_VALUES = ${JSON.stringify({
+ subApi: settings.subApi || '',
+ subConfig: settings.subConfig || '',
+ noAds: settings.noAds || ''
+})};
 let editingSub = '';
 let editingUrlValue = '';
 
@@ -2270,9 +2275,9 @@ function openSettingModal(field){
  status.textContent='';
  status.style.color='';
  const configs={
-   subApi:{title:'编辑订阅转换后端 SUBAPI',html:'<div class="field"><label>SUBAPI 地址</label><input id="setting-modal-input" type="text" value="'+escapeAttr(${JSON.stringify(settings.subApi || '')})+'" placeholder="留空使用默认值"></div>'},
-   subConfig:{title:'编辑订阅转换规则 SUBCONFIG',html:'<div class="field"><label>SUBCONFIG 地址</label><textarea id="setting-modal-input" style="min-height:120px" placeholder="留空使用默认值">'+escapeHTML(${JSON.stringify(settings.subConfig || '')})+'</textarea></div>'},
-   noAds:{title:'编辑节点屏蔽（NOADS）',html:'<div class="field"><label>屏蔽关键词</label><textarea id="setting-modal-input" style="min-height:160px" placeholder="示例: 加入TG群, 订阅YouTube频道, https://t.me ......">'+escapeHTML(${JSON.stringify(settings.noAds || '')})+'</textarea><div class="section-note">使用英文逗号、空格或换行分隔</div></div>'}
+   subApi:{title:'编辑订阅转换后端 SUBAPI',html:'<div class="field"><label>SUBAPI 地址</label><input id="setting-modal-input" type="text" value="'+escapeAttr(SETTING_VALUES.subApi)+'" placeholder="留空使用默认值"></div>'},
+   subConfig:{title:'编辑订阅转换规则 SUBCONFIG',html:'<div class="field"><label>SUBCONFIG 地址</label><textarea id="setting-modal-input" style="min-height:120px" placeholder="留空使用默认值">'+escapeHTML(SETTING_VALUES.subConfig)+'</textarea></div>'},
+   noAds:{title:'编辑节点屏蔽（NOADS）',html:'<div class="field"><label>屏蔽关键词</label><textarea id="setting-modal-input" style="min-height:160px" placeholder="示例: 加入TG群, 订阅YouTube频道, https://t.me ......">'+escapeHTML(SETTING_VALUES.noAds)+'</textarea><div class="section-note">使用英文逗号、空格或换行分隔</div></div>'}
  };
  const item=configs[field];
  if(!item)return;
