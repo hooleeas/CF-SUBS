@@ -1,21 +1,20 @@
 /**
  * CF-SUBS
- * 基于 CF-SUB 核心能力扩展的多 SUBS / 多访客 TOKEN 管理版
+ * 基于 CF-SUB 核心能力扩展的多 SUB / 多订阅链接 URL 管理版
  *
  * 核心原则：
  * 1. 只使用一个 Cloudflare KV Binding：KV
  * 2. 保留 CF-SUB 的核心订阅获取、聚合、去重、NOADS、SUBAPI、格式识别、
  *    WARP、主页伪装、管理员登录、二维码、API/CONFIG 状态检测等能力。
- * 3. SUBS 是“聚合节点配置”，不是公开订阅链接。
- * 4. TOKEN 才是公开访客订阅入口。
+ * 3. SUB 是“聚合节点配置”，不是公开订阅链接。
+ * 4. URL 才是公开订阅入口。
  *
  * KV：
  *   CONFIG.json
- *   SUBS:<id>
- *   TOKEN:<token>
+ *   SUB:<id>
+ *   URL:<url>
  *
  * Pages / Workers 环境变量仍兼容原 CF-SUB：
- *   TOKEN
  *   USER
  *   PASS
  *   URL
@@ -57,9 +56,9 @@ let fakeUrl302 = '';
 let fakeCode = '';
 // ==============================================
 
-const SUBS_PREFIX = 'SUBS:';
-const TOKEN_PREFIX = 'TOKEN:';
-const TOKEN_CHARS = 'ABCDEFGHJKMNPQRSTWXYZabcdefghijkmnpqrstwxyz2345678';
+const SUB_PREFIX = 'SUB:';
+const URL_PREFIX = 'URL:';
+const ID_CHARS = 'ABCDEFGHJKMNPQRSTWXYZabcdefghijkmnpqrstwxyz2345678';
 const DEFAULT_ADMIN_PATH = 'admin';
 
 export default {
@@ -84,11 +83,11 @@ async function handleRequest(request, env) {
         const userAgent = userAgentHeader.toLowerCase();
         const url = new URL(request.url);
         const queryToken = url.searchParams.get('token') || '';
-        // SUBAPI 转换内部请求：记录原始访客 TOKEN，确保转换时只使用该 TOKEN 绑定的 SUBS
+        // SUBAPI 转换内部请求：记录原始订阅 URL，确保转换时只使用该 URL 绑定的 SUB
         const conversionSourceToken = url.searchParams.get('sourceToken') || '';
 
         // 每次请求重新从环境变量读取，保持 CF-SUB 原有变量行为
-        mytoken = env.TOKEN || mytoken;
+        // 不再使用 TOKEN 环境变量；旧 /auto 入口继续由内部默认值兼容。
         let adminUser = env.USER || '';
         let adminPass = env.PASS || '';
         let adminPath = DEFAULT_ADMIN_PATH;
@@ -202,8 +201,8 @@ async function handleRequest(request, env) {
             });
         }
 
-        // ==================== 解析公开 TOKEN ====================
-        // 新版 TOKEN：
+        // ==================== 解析公开 URL ====================
+        // 新版 URL：
         //   /abc123
         //   /abc123?clash
         //   /?token=abc123
@@ -231,7 +230,7 @@ async function handleRequest(request, env) {
             publicToken === fakeToken ||
             url.pathname === '/' + fakeToken;
 
-        // 新 TOKEN / auto / fakeToken 都属于有效入口
+        // 新 URL / auto / fakeToken 都属于有效入口
         const validPublicEntry =
             !!tokenData || legacyAdminPath || isFakeTokenRequest;
 
@@ -271,7 +270,7 @@ async function handleRequest(request, env) {
         let selectedSources = [];
 
         if (tokenData) {
-            // 新架构：TOKEN -> 多个 SUBS -> 多个来源
+            // 新架构：URL -> 多个 SUB -> 多个来源
             selectedSources = await getSourcesForToken(env, tokenData);
         } else {
             // 兼容旧 CF-SUB：
@@ -308,12 +307,12 @@ async function handleRequest(request, env) {
                 hasCustomConfig
             );
 
-            // 新 TOKEN：访客页面
+            // 新 URL：订阅页面
             if (tokenData) {
                 return new Response(
                     renderGuestPage(
                         url,
-                        tokenData.token,
+                        tokenData.url,
                         status.finalApiUrl,
                         status.finalConfigUrl,
                         status.guestApiHtml,
@@ -524,13 +523,13 @@ async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomCo
 }
 
 /* =========================================================
- * SUBS / TOKEN 数据
+ * SUB / URL 数据
  * ======================================================= */
 
 function makeSubId() {
     const bytes = crypto.getRandomValues(new Uint8Array(10));
     let value = '';
-    for (const b of bytes) value += TOKEN_CHARS[b % TOKEN_CHARS.length];
+    for (const b of bytes) value += ID_CHARS[b % ID_CHARS.length];
     return value;
 }
 
@@ -538,7 +537,7 @@ async function makeRandomToken(env, length = 6) {
     for (let n = 0; n < 30; n++) {
         const bytes = crypto.getRandomValues(new Uint8Array(length));
         let token = '';
-        for (const b of bytes) token += TOKEN_CHARS[b % TOKEN_CHARS.length];
+        for (const b of bytes) token += ID_CHARS[b % ID_CHARS.length];
 
         if (
             !['admin', 'api', 'login', 'logout', 'favicon.ico'].includes(token.toLowerCase()) &&
@@ -547,13 +546,13 @@ async function makeRandomToken(env, length = 6) {
             return token;
         }
     }
-    throw new Error('随机 TOKEN 生成失败，请重试');
+    throw new Error('随机 URL 生成失败，请重试');
 }
 
 async function getSub(env, id) {
     if (!env.KV || !id) return null;
     try {
-        return await env.KV.get(`${SUBS_PREFIX}${id}`, 'json');
+        return await env.KV.get(`${SUB_PREFIX}${id}`, 'json');
     } catch (e) {
         return null;
     }
@@ -562,7 +561,7 @@ async function getSub(env, id) {
 async function getToken(env, token) {
     if (!env.KV || !token) return null;
     try {
-        return await env.KV.get(`${TOKEN_PREFIX}${token}`, 'json');
+        return await env.KV.get(`${URL_PREFIX}${token}`, 'json');
     } catch (e) {
         return null;
     }
@@ -575,12 +574,12 @@ async function listSubs(env) {
 
     do {
         const page = await env.KV.list({
-            prefix: SUBS_PREFIX,
+            prefix: SUB_PREFIX,
             ...(cursor ? { cursor } : {})
         });
 
         for (const item of page.keys) {
-            const data = await getSub(env, item.name.slice(SUBS_PREFIX.length));
+            const data = await getSub(env, item.name.slice(SUB_PREFIX.length));
             if (data) result.push(data);
         }
 
@@ -598,12 +597,12 @@ async function listTokens(env) {
 
     do {
         const page = await env.KV.list({
-            prefix: TOKEN_PREFIX,
+            prefix: URL_PREFIX,
             ...(cursor ? { cursor } : {})
         });
 
         for (const item of page.keys) {
-            const token = item.name.slice(TOKEN_PREFIX.length);
+            const token = item.name.slice(URL_PREFIX.length);
             const data = await getToken(env, token);
             if (data) result.push(data);
         }
@@ -661,7 +660,7 @@ async function isSubNameUsed(env, name, exceptId = '') {
 async function isTokenNameUsed(env, name, exceptToken = '') {
     const tokens = await listTokens(env);
     return tokens.some(t =>
-        t.token !== exceptToken &&
+        t.url !== exceptToken &&
         String(t.name).toLowerCase() === String(name).toLowerCase()
     );
 }
@@ -738,7 +737,7 @@ async function handleAdmin(request, env, runtime) {
         );
     }
 
-    // 管理后台 POST：统一处理配置 / SUBS / TOKEN
+    // 管理后台 POST：统一处理配置 / SUB / URL
     if (request.method === 'POST') {
         const contentType = request.headers.get('content-type') || '';
 
@@ -793,7 +792,7 @@ async function handleAdmin(request, env, runtime) {
                     updatedAt: new Date().toISOString()
                 };
 
-                await env.KV.put(`${SUBS_PREFIX}${id}`, JSON.stringify(item));
+                await env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
                 return jsonResponse({ ok: true, sub: item });
             }
 
@@ -817,7 +816,7 @@ async function handleAdmin(request, env, runtime) {
                     updatedAt: new Date().toISOString()
                 };
 
-                await env.KV.put(`${SUBS_PREFIX}${id}`, JSON.stringify(item));
+                await env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
                 return jsonResponse({ ok: true, sub: item });
             }
 
@@ -825,25 +824,25 @@ async function handleAdmin(request, env, runtime) {
                 const id = String(data.id || '');
                 if (!(await getSub(env, id))) return new Response('SUBS 不存在', { status: 404 });
 
-                await env.KV.delete(`${SUBS_PREFIX}${id}`);
+                await env.KV.delete(`${SUB_PREFIX}${id}`);
 
-                // 删除 SUBS 后，自动从所有 TOKEN 的绑定列表移除
+                // 删除 SUB 后，自动从所有 URL 的绑定列表移除
                 const tokens = await listTokens(env);
                 for (const item of tokens) {
                     if (Array.isArray(item.subs) && item.subs.includes(id)) {
                         item.subs = item.subs.filter(x => x !== id);
                         item.updatedAt = new Date().toISOString();
-                        await env.KV.put(`${TOKEN_PREFIX}${item.token}`, JSON.stringify(item));
+                        await env.KV.put(`${URL_PREFIX}${item.url}`, JSON.stringify(item));
                     }
                 }
 
                 return jsonResponse({ ok: true });
             }
 
-            if (data.type === 'token_create') {
+            if (data.type === 'url_create') {
                 const name = normalizeName(data.name);
                 const mode = data.mode === 'custom' ? 'custom' : 'random';
-                let token = normalizeToken(data.token);
+                let token = normalizeToken(data.url || data.token);
                 const selected = Array.isArray(data.subs)
                     ? [...new Set(data.subs.map(String))]
                     : [];
@@ -853,10 +852,10 @@ async function handleAdmin(request, env, runtime) {
 
                 if (mode === 'custom') {
                     if (!validCustomToken(token)) {
-                        return new Response('自定义 TOKEN 只能使用 3-80 位字母、数字、下划线和短横线', { status: 400 });
+                        return new Response('自定义 URL 只能使用 3-80 位字母、数字、下划线和短横线', { status: 400 });
                     }
                     if (await getToken(env, token)) {
-                        return new Response('TOKEN 已存在，请使用其他 TOKEN', { status: 409 });
+                        return new Response('URL 已存在，请使用其他 URL', { status: 409 });
                     }
                 } else {
                     token = await makeRandomToken(env, 6);
@@ -872,22 +871,22 @@ async function handleAdmin(request, env, runtime) {
                 }
 
                 const item = {
-                    token,
+                    url: token,
                     name,
                     subs: validSubs,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
 
-                await env.KV.put(`${TOKEN_PREFIX}${token}`, JSON.stringify(item));
-                return jsonResponse({ ok: true, token: item });
+                await env.KV.put(`${URL_PREFIX}${token}`, JSON.stringify(item));
+                return jsonResponse({ ok: true, url: item });
             }
 
-            if (data.type === 'token_update') {
-                const oldToken = normalizeToken(data.oldToken || data.token);
-                const newToken = normalizeToken(data.newToken || data.token);
+            if (data.type === 'url_update') {
+                const oldToken = normalizeToken(data.oldUrl || data.oldToken || data.url || data.token);
+                const newToken = normalizeToken(data.newUrl || data.newToken || data.url || data.token);
                 const old = await getToken(env, oldToken);
-                if (!old) return new Response('TOKEN 不存在', { status: 404 });
+                if (!old) return new Response('URL 不存在', { status: 404 });
 
                 const name = normalizeName(data.name);
                 const selected = Array.isArray(data.subs)
@@ -896,12 +895,12 @@ async function handleAdmin(request, env, runtime) {
 
                 if (!validName(name)) return new Response('链接名称不能为空且不能超过 80 个字符', { status: 400 });
                 if (!validCustomToken(newToken)) {
-                    return new Response('TOKEN 只能使用 3-80 位字母、数字、下划线和短横线', { status: 400 });
+                    return new Response('URL 只能使用 3-80 位字母、数字、下划线和短横线', { status: 400 });
                 }
                 if (await isTokenNameUsed(env, name, oldToken)) return new Response('链接名称已存在，不能重名', { status: 409 });
 
                 if (newToken !== oldToken && await getToken(env, newToken)) {
-                    return new Response('新的 TOKEN 已存在，请使用其他 TOKEN', { status: 409 });
+                    return new Response('新的 URL 已存在，请使用其他 URL', { status: 409 });
                 }
 
                 const validSubs = [];
@@ -913,28 +912,28 @@ async function handleAdmin(request, env, runtime) {
 
                 const item = {
                     ...old,
-                    token: newToken,
+                    url: newToken,
                     name,
                     subs: validSubs,
                     updatedAt: new Date().toISOString()
                 };
 
-                // TOKEN 本身发生变化时，迁移 KV Key，确保旧地址立即失效、新地址立即生效。
+                // URL 本身发生变化时，迁移 KV Key，确保旧地址立即失效、新地址立即生效。
                 if (newToken !== oldToken) {
-                    await env.KV.put(`${TOKEN_PREFIX}${newToken}`, JSON.stringify(item));
-                    await env.KV.delete(`${TOKEN_PREFIX}${oldToken}`);
+                    await env.KV.put(`${URL_PREFIX}${newToken}`, JSON.stringify(item));
+                    await env.KV.delete(`${URL_PREFIX}${oldToken}`);
                 } else {
-                    await env.KV.put(`${TOKEN_PREFIX}${oldToken}`, JSON.stringify(item));
+                    await env.KV.put(`${URL_PREFIX}${oldToken}`, JSON.stringify(item));
                 }
 
-                return jsonResponse({ ok: true, token: item, oldToken });
+                return jsonResponse({ ok: true, url: item, oldUrl: oldToken });
             }
 
-            if (data.type === 'token_delete') {
-                const token = normalizeToken(data.token);
-                if (!(await getToken(env, token))) return new Response('TOKEN 不存在', { status: 404 });
+            if (data.type === 'url_delete') {
+                const token = normalizeToken(data.url || data.token);
+                if (!(await getToken(env, token))) return new Response('URL 不存在', { status: 404 });
 
-                await env.KV.delete(`${TOKEN_PREFIX}${token}`);
+                await env.KV.delete(`${URL_PREFIX}${token}`);
                 return jsonResponse({ ok: true });
             }
 
@@ -1909,7 +1908,7 @@ ${getToolStyles()}
 
 <div id="copyNotice" class="toast"></div>
 
-<!-- SUBS Modal -->
+<!-- SUB Modal -->
 <div id="subsModal" class="modal-overlay">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">📦 <span id="subsModalTitle">创建聚合节点</span></h2>
@@ -1933,41 +1932,41 @@ ${getToolStyles()}
 </div>
 </div>
 
-<!-- TOKEN Modal -->
-<div id="tokenModal" class="modal-overlay">
+<!-- URL Modal -->
+<div id="urlModal" class="modal-overlay">
 <div class="modal-content">
-<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🔗 <span id="tokenModalTitle">创建访客订阅链接</span></h2>
+<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🔗 <span id="urlModalTitle">创建订阅链接</span></h2>
 
 <div class="field">
 <label>链接名称</label>
-<input id="token-edit-name" type="text" placeholder="例如：我的主订阅">
+<input id="url-edit-name" type="text" placeholder="例如：我的主订阅">
 </div>
 
-<div class="field" id="token-mode-field">
-<label>TOKEN 生成方式</label>
-<select id="token-edit-mode" onchange="switchTokenMode()">
+<div class="field" id="url-mode-field">
+<label>URL 生成方式</label>
+<select id="url-edit-mode" onchange="switchUrlMode()">
 <option value="random">随机生成</option>
-<option value="custom">自定义 TOKEN</option>
+<option value="custom">自定义 URL</option>
 </select>
 </div>
 
 <div class="field">
-<label>TOKEN</label>
-<input id="token-edit-value" type="text" placeholder="随机生成或输入自定义 TOKEN">
-<div class="small-note" id="tokenModeNote">随机 TOKEN 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 TOKEN。</div>
+<label>URL</label>
+<input id="url-edit-value" type="text" placeholder="随机生成或输入自定义 URL">
+<div class="small-note" id="urlModeNote">随机 URL 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 URL。</div>
 </div>
 
 <div class="field">
 <label>可使用的聚合节点</label>
-<div id="token-sub-list" class="check-list"></div>
-<div class="small-note">一个 TOKEN 可以选择多个 SUBS；一个 SUBS 也可以被多个 TOKEN 使用。</div>
+<div id="url-sub-list" class="check-list"></div>
+<div class="small-note">一个 URL 可以选择多个 SUB；一个 SUB 也可以被多个 URL 使用。</div>
 </div>
 
 <div class="actions" style="justify-content:flex-end;">
-<button type="button" class="secondary" onclick="closeTokenModal()">取消</button>
-<button type="button" onclick="saveToken()">保存</button>
+<button type="button" class="secondary" onclick="closeUrlModal()">取消</button>
+<button type="button" onclick="saveUrl()">保存</button>
 </div>
-<span id="tokenSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
+<span id="urlSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
@@ -2074,8 +2073,8 @@ ${getToolStyles()}
 <section class="panel">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
 <div>
-<h2 class="section-title">聚合节点 (SUBS)</h2>
-<div class="section-note">SUBS 是聚合节点配置，不是订阅链接。默认为空，可创建多个且名称不能重复。</div>
+<h2 class="section-title">聚合节点 (SUB)</h2>
+<div class="section-note">SUB 是聚合节点配置，不是订阅链接。默认为空，可创建多个且名称不能重复。</div>
 </div>
 <button type="button" onclick="openSubCreate()">＋ 创建聚合节点</button>
 </div>
@@ -2095,22 +2094,22 @@ ${subs.length ? subs.map(s => `
 </div>
 <div class="source-box">${escapeHTML((s.sources || []).join('\n'))}</div>
 </div>
-`).join('') : `<div class="empty">暂无聚合节点。SUBS 默认就是空的，请点击“创建聚合节点”。</div>`}
+`).join('') : `<div class="empty">暂无聚合节点。SUB 默认就是空的，请点击“创建聚合节点”。</div>`}
 </div>
 </section>
 
 <section class="panel">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
 <div>
-<h2 class="section-title">访客订阅链接 (TOKEN)</h2>
-<div class="section-note">创建链接才会生成公开订阅入口。TOKEN 可以绑定一个或多个 SUBS。</div>
+<h2 class="section-title">订阅链接 (URL)</h2>
+<div class="section-note">创建链接才会生成公开订阅入口。URL 可以绑定一个或多个 SUB。</div>
 </div>
-<button type="button" onclick="openTokenCreate()">＋ 创建链接</button>
+<button type="button" onclick="openUrlCreate()">＋ 创建链接</button>
 </div>
 
 <div class="sub-grid" style="margin-top:12px;">
 ${tokens.length ? tokens.map(t => {
-    const tokenUrl = `${origin}/${encodeURIComponent(t.token)}`;
+    const tokenUrl = `${origin}/${encodeURIComponent(t.url)}`;
     const subNames = (t.subs || []).map(id => {
         const s = subs.find(x => x.id === id);
         return s ? s.name : '已删除';
@@ -2121,12 +2120,12 @@ ${tokens.length ? tokens.map(t => {
 <div class="sub-head">
 <div style="min-width:0;">
 <div class="sub-name">${escapeHTML(t.name)}</div>
-<div class="sub-count">TOKEN：${escapeHTML(t.token)}</div>
+<div class="sub-count">URL：${escapeHTML(t.url)}</div>
 </div>
 <div class="actions" style="margin-top:0;">
 <button type="button" class="secondary" onclick="copyValue('${escapeHTML(tokenUrl)}')">复制</button>
-<button type="button" class="secondary" onclick="editToken('${escapeHTML(t.token)}')">编辑</button>
-<button type="button" class="danger" onclick="deleteToken('${escapeHTML(t.token)}')">删除</button>
+<button type="button" class="secondary" onclick="editUrl('${escapeHTML(t.url)}')">编辑</button>
+<button type="button" class="danger" onclick="deleteUrl('${escapeHTML(t.url)}')">删除</button>
 </div>
 </div>
 <a class="link-url token-url" href="${escapeHTML(tokenUrl)}" target="_blank">${escapeHTML(tokenUrl)}</a>
@@ -2134,7 +2133,7 @@ ${tokens.length ? tokens.map(t => {
 ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span>`).join('') : '<span class="small-note">未绑定聚合节点</span>'}
 </div>
 </div>`;
-}).join('') : `<div class="empty">暂无访客订阅链接。创建 TOKEN 后才会产生公开订阅地址。</div>`}
+}).join('') : `<div class="empty">暂无订阅链接。创建 URL 后才会产生公开订阅地址。</div>`}
 </div>
 </section>
 
@@ -2146,7 +2145,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 const SUBS = ${JSON.stringify(subs)};
 const TOKENS = ${JSON.stringify(tokens)};
 let editingSub = '';
-let editingTokenValue = '';
+let editingUrlValue = '';
 
 function showToast(message){
  const el=document.getElementById('copyNotice');
@@ -2272,7 +2271,7 @@ async function saveSubs(){
 async function deleteSub(id){
  const item=SUBS.find(x=>x.id===id);
  if(!item)return;
- if(!confirm('确定删除“'+item.name+'”吗？\\n已经绑定它的 TOKEN 会自动解除绑定。'))return;
+ if(!confirm('确定删除“'+item.name+'”吗？\\n已经绑定它的 URL 会自动解除绑定。'))return;
 
  const res=await fetch(window.location.pathname,{
    method:'POST',
@@ -2285,10 +2284,10 @@ async function deleteSub(id){
  location.reload();
 }
 
-function renderTokenSubs(selected){
- const box=document.getElementById('token-sub-list');
+function renderUrlSubs(selected){
+ const box=document.getElementById('url-sub-list');
  if(!SUBS.length){
-   box.innerHTML='<div class="small-note">暂无 SUBS，请先创建聚合节点。</div>';
+   box.innerHTML='<div class="small-note">暂无 SUB，请先创建聚合节点。</div>';
    return;
  }
  box.innerHTML=SUBS.map(s=>\`
@@ -2303,68 +2302,68 @@ function escapeJS(value){
  return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-function openTokenCreate(){
- editingTokenValue='';
- document.getElementById('tokenModalTitle').textContent='创建访客订阅链接';
- document.getElementById('token-edit-name').value='';
- document.getElementById('token-edit-mode').value='random';
- document.getElementById('token-edit-value').value='';
- document.getElementById('token-edit-value').disabled=true;
- document.getElementById('tokenSaveStatus').textContent='';
- renderTokenSubs([]);
- document.getElementById('tokenModal').style.display='flex';
+function openUrlCreate(){
+ editingUrlValue='';
+ document.getElementById('urlModalTitle').textContent='创建订阅链接';
+ document.getElementById('url-edit-name').value='';
+ document.getElementById('url-edit-mode').value='random';
+ document.getElementById('url-edit-value').value='';
+ document.getElementById('url-edit-value').disabled=true;
+ document.getElementById('urlSaveStatus').textContent='';
+ renderUrlSubs([]);
+ document.getElementById('urlModal').style.display='flex';
 }
 
-function closeTokenModal(){document.getElementById('tokenModal').style.display='none'}
+function closeUrlModal(){document.getElementById('urlModal').style.display='none'}
 
-function switchTokenMode(){
- const mode=document.getElementById('token-edit-mode').value;
- const input=document.getElementById('token-edit-value');
- if(editingTokenValue){
+function switchUrlMode(){
+ const mode=document.getElementById('url-edit-mode').value;
+ const input=document.getElementById('url-edit-value');
+ if(editingUrlValue){
    input.disabled=true;
    return;
  }
  input.disabled=mode!=='custom';
- document.getElementById('tokenModeNote').textContent=
+ document.getElementById('urlModeNote').textContent=
    mode==='random'
-   ? '随机 TOKEN 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 TOKEN。'
-   : '自定义 TOKEN 只能使用字母、数字、下划线和短横线。';
+   ? '随机 URL 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 URL。'
+   : '自定义 URL 只能使用字母、数字、下划线和短横线。';
 }
 
-function editToken(token){
- const item=TOKENS.find(x=>x.token===token);
+function editUrl(token){
+ const item=TOKENS.find(x=>x.url===token);
  if(!item)return;
- editingTokenValue=token;
- document.getElementById('tokenModalTitle').textContent='编辑访客订阅链接';
- document.getElementById('token-edit-name').value=item.name||'';
- document.getElementById('token-edit-mode').value='custom';
- document.getElementById('token-edit-value').value=item.token||'';
- document.getElementById('token-edit-value').disabled=false;
- document.getElementById('tokenModeNote').textContent='TOKEN 可以直接修改；保存后旧 TOKEN 立即失效，新 TOKEN 立即生效。';
- document.getElementById('tokenSaveStatus').textContent='';
- renderTokenSubs(item.subs||[]);
- document.getElementById('tokenModal').style.display='flex';
+ editingUrlValue=token;
+ document.getElementById('urlModalTitle').textContent='编辑订阅链接';
+ document.getElementById('url-edit-name').value=item.name||'';
+ document.getElementById('url-edit-mode').value='custom';
+ document.getElementById('url-edit-value').value=item.url||'';
+ document.getElementById('url-edit-value').disabled=false;
+ document.getElementById('urlModeNote').textContent='URL 可以直接修改；保存后旧 URL 立即失效，新 URL 立即生效。';
+ document.getElementById('urlSaveStatus').textContent='';
+ renderUrlSubs(item.subs||[]);
+ document.getElementById('urlModal').style.display='flex';
 }
 
-async function saveToken(){
- const selected=[...document.querySelectorAll('#token-sub-list input[type=checkbox]:checked')].map(x=>x.value);
+async function saveUrl(){
+ const selected=[...document.querySelectorAll('#url-sub-list input[type=checkbox]:checked')].map(x=>x.value);
 
  if(!selected.length){
    showToast('至少选择一个聚合节点');
    return;
  }
 
- const payload=editingTokenValue?{
-   type:'token_update',
-   oldToken:editingTokenValue,
-   newToken:document.getElementById('token-edit-value').value.trim(),
-   name:document.getElementById('token-edit-name').value.trim(),
+ const payload=editingUrlValue?{
+   type:'url_update',
+   oldUrl:editingUrlValue,
+   newUrl:document.getElementById('url-edit-value').value.trim(),
+   name:document.getElementById('url-edit-name').value.trim(),
    subs:selected
  }:{
-   type:'token_create',
-   name:document.getElementById('token-edit-name').value.trim(),
-   mode:document.getElementById('token-edit-mode').value,
-   token:document.getElementById('token-edit-value').value.trim(),
+   type:'url_create',
+   name:document.getElementById('url-edit-name').value.trim(),
+   mode:document.getElementById('url-edit-mode').value,
+   url:document.getElementById('url-edit-value').value.trim(),
    subs:selected
  };
 
@@ -2375,15 +2374,15 @@ async function saveToken(){
  location.reload();
 }
 
-async function deleteToken(token){
- const item=TOKENS.find(x=>x.token===token);
+async function deleteUrl(token){
+ const item=TOKENS.find(x=>x.url===token);
  if(!item)return;
  if(!confirm('确定删除“'+item.name+'”吗？'))return;
 
  const res=await fetch(window.location.pathname,{
    method:'POST',
    headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({type:'token_delete',token})
+   body:JSON.stringify({type:'url_delete',url:token})
  });
  const text=await res.text();
 
