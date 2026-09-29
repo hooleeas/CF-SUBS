@@ -21,7 +21,6 @@
  *   URL
  *   URL302
  *   CODE
- *   GUESTTOKEN / GUEST
  *   SUBUPTIME
  *   WARP
  *   LINK
@@ -29,7 +28,6 @@
  */
 
 let mytoken = 'auto';
-let guestToken = '';
 let FileName = 'CF-SUBS';
 let SUBUpdateTime = 6;
 let total = 99;
@@ -113,7 +111,6 @@ async function handleRequest(request, env) {
                     config_noAds = kvConfig.noAds || '';
 
                     // 原 CF-SUB 配置仍然兼容
-                    guestToken = kvConfig.guest || guestToken;
                     adminUser = kvConfig.user || adminUser;
                     adminPass = kvConfig.pass || adminPass;
                     adminPath = normalizeAdminPath(kvConfig.adminPath) || DEFAULT_ADMIN_PATH;
@@ -127,9 +124,6 @@ async function handleRequest(request, env) {
                 console.error('解析 KV 配置失败', e);
             }
         }
-
-        // 环境变量仍然支持旧 CF-SUB 的 GUEST / GUESTTOKEN
-        guestToken = env.GUESTTOKEN || env.GUEST || guestToken;
 
         const customSubApi = String(subConverter || '').trim();
         const customSubConfig = String(subConfig || '').trim();
@@ -156,8 +150,6 @@ async function handleRequest(request, env) {
         const timeTemp = Math.ceil(currentDate.getTime() / 1000);
         const fakeToken = await MD5MD5(`${mytoken}${timeTemp}`);
 
-        if (!guestToken) guestToken = await MD5MD5(mytoken);
-
         let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
         total = total * 1099511627776;
         let expire = Math.floor(timestamp / 1000);
@@ -169,11 +161,12 @@ async function handleRequest(request, env) {
             'shadowrocket', 'subconverter'
         ].some(keyword => userAgent.includes(keyword));
 
-        // 退出登录：返回 204，不产生 logout 中间页面
+        // 退出登录：直接跳回主页，不显示 logout 中间页面
         if (url.searchParams.has('logout') || url.pathname === `/${adminPath}/logout`) {
             return new Response(null, {
-                status: 204,
+                status: 302,
                 headers: {
+                    'Location': '/',
                     'Cache-Control': 'no-store',
                     'Set-Cookie': 'CF_SUB_ADMIN=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax'
                 }
@@ -218,7 +211,6 @@ async function handleRequest(request, env) {
         // 兼容旧 CF-SUB：
         //   /auto
         //   /?token=auto
-        //   /<guestToken>
         let publicToken = queryToken;
 
         if (!publicToken && url.pathname !== '/') {
@@ -235,17 +227,13 @@ async function handleRequest(request, env) {
             publicToken === mytoken ||
             publicToken.toLowerCase() === String(mytoken).toLowerCase();
 
-        const legacyGuestPath =
-            !!guestToken &&
-            publicToken.toLowerCase() === String(guestToken).toLowerCase();
-
         const isFakeTokenRequest =
             publicToken === fakeToken ||
             url.pathname === '/' + fakeToken;
 
-        // 新 TOKEN 或旧 guest token / auto / fakeToken 都属于有效入口
+        // 新 TOKEN / auto / fakeToken 都属于有效入口
         const validPublicEntry =
-            !!tokenData || legacyAdminPath || legacyGuestPath || isFakeTokenRequest;
+            !!tokenData || legacyAdminPath || isFakeTokenRequest;
 
         // ==================== 无效路径 / 主页 ====================
         if (!validPublicEntry && url.pathname !== '/') {
@@ -287,7 +275,7 @@ async function handleRequest(request, env) {
             selectedSources = await getSourcesForToken(env, tokenData);
         } else {
             // 兼容旧 CF-SUB：
-            // auto = 所有 SUBS；guest = legacy GUEST；fake = 所有 SUBS
+            // auto = 所有 SUBS；fake = 所有 SUBS
             if (isFakeTokenRequest && conversionSourceToken) {
                 const sourceTokenData = await getToken(env, conversionSourceToken);
                 if (sourceTokenData) {
@@ -298,7 +286,7 @@ async function handleRequest(request, env) {
             } else if (legacyAdminPath || isFakeTokenRequest) {
                 selectedSources = await getAllManagedSources(env);
             } else if (legacyGuestPath) {
-                // 如果旧 guest 没有 SUBS 绑定，则使用旧 LINK.txt / LINK 环境变量。
+                // 如果没有 SUBS，则使用旧 LINK.txt / LINK 环境变量。
                 selectedSources = await getLegacySources(env);
                 if (!selectedSources.length) {
                     selectedSources = await getAllManagedSources(env);
@@ -333,24 +321,6 @@ async function handleRequest(request, env) {
                         status.guestApiCss,
                         status.guestConfigCss,
                         tokenData.name
-                    ),
-                    { headers: { 'Content-Type': 'text/html;charset=utf-8' } }
-                );
-            }
-
-            // 旧 guest 页面
-            if (legacyGuestPath) {
-                return new Response(
-                    renderGuestPage(
-                        url,
-                        guestToken,
-                        status.finalApiUrl,
-                        status.finalConfigUrl,
-                        status.guestApiHtml,
-                        status.guestConfigHtml,
-                        status.guestApiCss,
-                        status.guestConfigCss,
-                        '访客订阅'
                     ),
                     { headers: { 'Content-Type': 'text/html;charset=utf-8' } }
                 );
@@ -670,7 +640,6 @@ function validCustomToken(token) {
     const reserved = new Set([
         'admin', 'api', 'login', 'logout', 'favicon.ico', 'auto',
         String(mytoken || '').toLowerCase(),
-        String(guestToken || '').toLowerCase()
     ]);
 
     return (
@@ -790,7 +759,6 @@ async function handleAdmin(request, env, runtime) {
                     noAds: String(data.settings?.noAds || '').trim(),
 
                     // 保留旧配置
-                    guest: String(data.settings?.guest || old.guest || ''),
                     user: String(data.settings?.user || old.user || ''),
                     pass: data.settings?.pass
                         ? String(data.settings.pass)
@@ -998,7 +966,6 @@ async function getConfig(env) {
         subApi: '',
         subConfig: '',
         noAds: '',
-        guest: '',
         user: '',
         pass: '',
         adminPath: DEFAULT_ADMIN_PATH,
@@ -1726,7 +1693,6 @@ function renderToolScripts(includeEditor = false) {
                 body: JSON.stringify({
                     type: 'config',
                     settings: {
-                        guest: document.getElementById('sec-guest') ? document.getElementById('sec-guest').value : '',
                         user: document.getElementById('sec-user') ? document.getElementById('sec-user').value : '',
                         pass: secPass,
                         adminPath: document.getElementById('sec-admin-path') ? document.getElementById('sec-admin-path').value : 'admin',
@@ -1744,10 +1710,18 @@ function renderToolScripts(includeEditor = false) {
             }).then(function (res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
-            }).then(function () {
-                statusElem.textContent = '已保存 ' + new Date().toLocaleString();
-                statusElem.style.color = 'var(--coral, #2e7d32)';
-                setTimeout(() => window.location.reload(), 500);
+            }).then(function (res) {
+                return res.text().then(function (text) {
+                    let data = {};
+                    try { data = JSON.parse(text); } catch (e) {}
+                    statusElem.textContent = '已保存 ' + new Date().toLocaleString();
+                    statusElem.style.color = 'var(--coral, #2e7d32)';
+                    if (isSec && data.adminPath) {
+                        setTimeout(() => window.location.replace('/'), 300);
+                    } else {
+                        setTimeout(() => window.location.reload(), 500);
+                    }
+                });
             }).catch(function (err) {
                 statusElem.textContent = '保存失败: 网络异常或超时';
                 statusElem.style.color = '#c62828';
@@ -1985,11 +1959,10 @@ ${getToolStyles()}
 <div id="securityModal" class="modal-overlay">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🛡️ 账户与安全设置</h2>
-<div class="field"><label>旧版访客入口 (GUEST)</label><input id="sec-guest" type="text" value="${escapeHTML(settings.guest || '')}" placeholder="仅用于兼容旧 CF-SUB；新项目请使用访客 TOKEN"></div>
 <div class="field"><label>后台登录账号 (USER)</label><input id="sec-user" type="text" value="${escapeHTML(settings.user || '')}" placeholder="例如：admin"></div>
 <div class="field"><label>后台登录密码 (PASS)</label><input id="sec-pass" type="password" value="" placeholder="留空则不修改当前密码"></div>
 <div class="field"><label>确认登录密码</label><input id="sec-pass2" type="password" value="" placeholder="留空则不修改当前密码"></div>
-<div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage"><div class="section-note">只填写路径单词，不需要填写 /。修改后保存会立即切换到新后台地址。</div></div>
+<div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage"><div class="section-note">只填写路径单词，不需要填写 /。修改后会立即退出后台并返回主页；例如改成 apple 后，使用 /apple 进入后台。</div></div>
 <div class="actions" style="margin-top:24px;justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSecurityModal()">取消</button>
 <button type="button" onclick="saveConfig(this,'sec')">保存修改</button>
@@ -2207,7 +2180,6 @@ function saveConfig(button,type){
    body:JSON.stringify({
      type:'config',
      settings:{
-       guest:document.getElementById('sec-guest')?.value||'',
        user:document.getElementById('sec-user')?.value||'',
        pass:secPass,
        subName:document.getElementById('config-subname')?.value||'',
@@ -2227,7 +2199,7 @@ function saveConfig(button,type){
    statusElem.style.color='#2e7d32';
    if(isSec && data.adminPath){
      const newPath=String(data.adminPath).replace(/^[/]+/, '').replace(/[/]+$/, '');
-     setTimeout(()=>location.replace('/'+newPath),300);
+     setTimeout(()=>location.replace('/'),300);
    }else{
      setTimeout(()=>location.reload(),500);
    }
