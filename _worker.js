@@ -884,8 +884,9 @@ async function handleAdmin(request, env, runtime) {
             }
 
             if (data.type === 'token_update') {
-                const token = normalizeToken(data.token);
-                const old = await getToken(env, token);
+                const oldToken = normalizeToken(data.oldToken || data.token);
+                const newToken = normalizeToken(data.newToken || data.token);
+                const old = await getToken(env, oldToken);
                 if (!old) return new Response('TOKEN 不存在', { status: 404 });
 
                 const name = normalizeName(data.name);
@@ -894,7 +895,14 @@ async function handleAdmin(request, env, runtime) {
                     : [];
 
                 if (!validName(name)) return new Response('链接名称不能为空且不能超过 80 个字符', { status: 400 });
-                if (await isTokenNameUsed(env, name, token)) return new Response('链接名称已存在，不能重名', { status: 409 });
+                if (!validCustomToken(newToken)) {
+                    return new Response('TOKEN 只能使用 3-80 位字母、数字、下划线和短横线', { status: 400 });
+                }
+                if (await isTokenNameUsed(env, name, oldToken)) return new Response('链接名称已存在，不能重名', { status: 409 });
+
+                if (newToken !== oldToken && await getToken(env, newToken)) {
+                    return new Response('新的 TOKEN 已存在，请使用其他 TOKEN', { status: 409 });
+                }
 
                 const validSubs = [];
                 for (const id of selected) {
@@ -905,13 +913,21 @@ async function handleAdmin(request, env, runtime) {
 
                 const item = {
                     ...old,
+                    token: newToken,
                     name,
                     subs: validSubs,
                     updatedAt: new Date().toISOString()
                 };
 
-                await env.KV.put(`${TOKEN_PREFIX}${token}`, JSON.stringify(item));
-                return jsonResponse({ ok: true, token: item });
+                // TOKEN 本身发生变化时，迁移 KV Key，确保旧地址立即失效、新地址立即生效。
+                if (newToken !== oldToken) {
+                    await env.KV.put(`${TOKEN_PREFIX}${newToken}`, JSON.stringify(item));
+                    await env.KV.delete(`${TOKEN_PREFIX}${oldToken}`);
+                } else {
+                    await env.KV.put(`${TOKEN_PREFIX}${oldToken}`, JSON.stringify(item));
+                }
+
+                return jsonResponse({ ok: true, token: item, oldToken });
             }
 
             if (data.type === 'token_delete') {
@@ -1938,7 +1954,7 @@ ${getToolStyles()}
 <div class="field">
 <label>TOKEN</label>
 <input id="token-edit-value" type="text" placeholder="随机生成或输入自定义 TOKEN">
-<div class="small-note" id="tokenModeNote">随机 TOKEN 使用类似 SURL 的 6 位随机后缀。</div>
+<div class="small-note" id="tokenModeNote">随机 TOKEN 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 TOKEN。</div>
 </div>
 
 <div class="field">
@@ -2311,7 +2327,7 @@ function switchTokenMode(){
  input.disabled=mode!=='custom';
  document.getElementById('tokenModeNote').textContent=
    mode==='random'
-   ? '随机 TOKEN 使用类似 SURL 的 6 位随机后缀。'
+   ? '随机 TOKEN 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 TOKEN。'
    : '自定义 TOKEN 只能使用字母、数字、下划线和短横线。';
 }
 
@@ -2323,8 +2339,8 @@ function editToken(token){
  document.getElementById('token-edit-name').value=item.name||'';
  document.getElementById('token-edit-mode').value='custom';
  document.getElementById('token-edit-value').value=item.token||'';
- document.getElementById('token-edit-value').disabled=true;
- document.getElementById('tokenModeNote').textContent='TOKEN 创建后保持不变，只可编辑名称和可使用的 SUBS。';
+ document.getElementById('token-edit-value').disabled=false;
+ document.getElementById('tokenModeNote').textContent='TOKEN 可以直接修改；保存后旧 TOKEN 立即失效，新 TOKEN 立即生效。';
  document.getElementById('tokenSaveStatus').textContent='';
  renderTokenSubs(item.subs||[]);
  document.getElementById('tokenModal').style.display='flex';
@@ -2340,7 +2356,8 @@ async function saveToken(){
 
  const payload=editingTokenValue?{
    type:'token_update',
-   token:editingTokenValue,
+   oldToken:editingTokenValue,
+   newToken:document.getElementById('token-edit-value').value.trim(),
    name:document.getElementById('token-edit-name').value.trim(),
    subs:selected
  }:{
