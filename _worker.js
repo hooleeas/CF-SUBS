@@ -1742,18 +1742,16 @@ function renderToolScripts(includeEditor = false) {
             }).then(function (res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
-            }).then(function (res) {
-                return res.text().then(function (text) {
-                    let data = {};
-                    try { data = JSON.parse(text); } catch (e) {}
-                    statusElem.textContent = '已保存 ' + new Date().toLocaleString();
-                    statusElem.style.color = 'var(--coral, #2e7d32)';
-                    if (isSec && data.adminPath) {
-                        setTimeout(() => window.location.replace('/'), 300);
-                    } else {
-                        setTimeout(() => window.location.reload(), 500);
-                    }
-                });
+            }).then(function (text) {
+                let data = {};
+                try { data = JSON.parse(text); } catch (e) {}
+                statusElem.textContent = '已保存 ' + new Date().toLocaleString();
+                statusElem.style.color = 'var(--coral, #2e7d32)';
+                if (isSec && data.adminPath) {
+                    setTimeout(() => window.location.replace('/'), 300);
+                } else {
+                    setTimeout(() => window.location.reload(), 500);
+                }
             }).catch(function (err) {
                 statusElem.textContent = '保存失败: 网络异常或超时';
                 statusElem.style.color = '#c62828';
@@ -2130,7 +2128,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
 <a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
 </div>
-<button type="button" onclick="openSettingModal('subApi')">编辑</button>
+<button type="button" data-setting="subApi" onclick="openSettingModal('subApi')">编辑</button>
 </div>
 </section>
 
@@ -2142,7 +2140,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
 <a class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
 </div>
-<button type="button" onclick="openSettingModal('subConfig')">编辑</button>
+<button type="button" data-setting="subConfig" onclick="openSettingModal('subConfig')">编辑</button>
 </div>
 </section>
 
@@ -2152,7 +2150,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <h2 class="section-title">节点屏蔽（NOADS）</h2>
 <div class="section-note" style="margin-top:8px;">${settings.noAds ? `已设置 ${settings.noAds.split(/[, \r\n]+/).filter(Boolean).length} 个屏蔽关键词` : '当前未设置屏蔽关键词'}</div>
 </div>
-<button type="button" onclick="openSettingModal('noAds')">编辑</button>
+<button type="button" data-setting="noAds" onclick="openSettingModal('noAds')">编辑</button>
 </div>
 </section>
 
@@ -2494,6 +2492,31 @@ async function deleteUrl(token){
 }
 
 switchFakeMode();
+
+// Defensive UI binding: keep every admin control clickable even if an inline
+// handler is blocked or an older handler throws. This does not replace the
+// existing handlers; it only provides a single delegated fallback.
+document.addEventListener('click', function(event) {
+    const btn = event.target.closest('button');
+    if (!btn || btn.disabled) return;
+    if (btn.closest('.modal-content') && event.defaultPrevented) return;
+
+    const text = (btn.textContent || '').trim();
+    try {
+        if (text === '🏠 主页') { event.preventDefault(); openFakeModal(); return; }
+        if (text === '🛡️ 安全') { event.preventDefault(); openSecurityModal(); return; }
+        if (text === '＋ 创建聚合节点') { event.preventDefault(); openSubCreate(); return; }
+        if (text === '＋ 创建订阅链接') { event.preventDefault(); openUrlCreate(); return; }
+
+        const setting = btn.getAttribute('data-setting');
+        if (setting) { event.preventDefault(); openSettingModal(setting); return; }
+
+        const action = btn.getAttribute('data-ui-action');
+        if (action === 'close-setting') { event.preventDefault(); closeSettingModal(); return; }
+    } catch (err) {
+        console.error('CF-SUBS UI fallback error:', err);
+    }
+}, true);
 </script>
 </body>
 </html>`;
