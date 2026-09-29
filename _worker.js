@@ -2092,15 +2092,8 @@ ${getToolStyles()}
 </header>
 
 <section class="panel">
-<div class="panel-head">
-<div>
-<h2 class="section-title">订阅转换后端 SUBAPI</h2>
-<div class="section-note">当前订阅转换后端</div>
-</div>
-<button type="button" class="edit-button" onclick="openSubApiModal()">编辑</button>
-</div>
-<div class="status-indicator ${status.adminApiCss}" style="margin-top:10px;">${status.adminApiHtml}</div>
-<a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
+<h2 class="section-title">全局名称设置 (SUBNAME)</h2>
+<div class="field"><input id="config-subname" type="text" value="${escapeHTML(settings.subName)}" placeholder="例如：CF-SUBS"></div>
 </section>
 
 <section class="panel">
@@ -2171,8 +2164,15 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 </section>
 
 <section class="panel">
-<h2 class="section-title">全局名称设置 (SUBNAME)</h2>
-<div class="field"><input id="config-subname" type="text" value="${escapeHTML(settings.subName)}" placeholder="例如：CF-SUBS"></div>
+<div class="panel-head">
+<div>
+<h2 class="section-title">订阅转换后端 SUBAPI</h2>
+<div class="section-note">当前订阅转换后端</div>
+</div>
+<button type="button" class="edit-button" onclick="openSubApiModal()">编辑</button>
+</div>
+<div class="status-indicator ${status.adminApiCss}" style="margin-top:10px;">${status.adminApiHtml}</div>
+<a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
 </section>
 
 <section class="panel">
