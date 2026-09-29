@@ -2084,8 +2084,15 @@ ${getToolStyles()}
 </header>
 
 <section class="panel">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+<div>
 <h2 class="section-title">全局名称设置 (SUBNAME)</h2>
-<div class="field"><input id="config-subname" type="text" value="${escapeHTML(settings.subName)}" placeholder="例如：CF-SUBS"></div>
+<div class="section-note">设置订阅名称，将显示在生成的订阅信息中。</div>
+</div>
+<button type="button" class="edit-button" onclick="saveConfig(this,'subname')">保存</button>
+</div>
+<div class="field" style="margin-top:12px;"><input id="config-subname" type="text" value="${escapeHTML(settings.subName)}" placeholder="例如：CF-SUBS"></div>
+<span id="configSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </section>
 
 <section class="panel">
