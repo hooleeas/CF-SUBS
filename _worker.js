@@ -2104,7 +2104,7 @@ ${subs.length ? subs.map(s => `
 <h2 class="section-title">订阅链接 (URL)</h2>
 <div class="section-note">创建链接才会生成公开订阅入口。URL 可以绑定一个或多个 SUB。</div>
 </div>
-<button type="button" onclick="openUrlCreate()">＋ 创建链接</button>
+<button type="button" onclick="openUrlCreate()">+ 创建订阅链接</button>
 </div>
 
 <div class="sub-grid" style="margin-top:12px;">
