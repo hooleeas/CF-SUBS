@@ -2223,46 +2223,68 @@ let editingUrlValue = '';
 function renderSubList(){
  const box=document.getElementById('sub-list');
  if(!box)return;
- box.innerHTML=SUBS.length ? SUBS.map(s=>`
-<div class="sub-row">
-<div class="sub-head">
-<div>
-<div class="sub-name">${escapeJS(s.name)}</div>
-<div class="sub-count">${s.sources?.length || 0} 个来源 · ${s.enabled === false ? '已禁用' : '已启用'}</div>
-</div>
-<div class="actions" style="margin-top:0;">
-<button type="button" class="edit-button" onclick="editSub('${escapeJS(s.id)}')">编辑</button>
-<button type="button" class="danger" onclick="deleteSub('${escapeJS(s.id)}')">删除</button>
-</div>
-</div>
-<div class="source-box">${escapeJS((s.sources || []).join('\n'))}</div>
-</div>`).join('') : '<div class="empty">暂无聚合节点。SUB 默认就是空的，请点击“创建聚合节点”。</div>';
+ if(!SUBS.length){
+   box.innerHTML='<div class="empty">暂无聚合节点。SUB 默认就是空的，请点击“创建聚合节点”。</div>';
+   return;
+ }
+ box.innerHTML=SUBS.map(function(s){
+   const sources=escapeJS((s.sources||[]).join('\\n'));
+   const name=escapeJS(s.name||'');
+   const id=escapeJS(s.id||'');
+   const count=s.sources?.length||0;
+   const enabled=s.enabled===false?'已禁用':'已启用';
+   return '<div class="sub-row">'
+    +'<div class="sub-head">'
+    +'<div>'
+    +'<div class="sub-name">'+name+'</div>'
+    +'<div class="sub-count">'+count+' 个来源 · '+enabled+'</div>'
+    +'</div>'
+    +'<div class="actions" style="margin-top:0;">'
+    +'<button type="button" class="edit-button" onclick="editSub(\''+id+'\')">编辑</button>'
+    +'<button type="button" class="danger" onclick="deleteSub(\''+id+'\')">删除</button>'
+    +'</div>'
+    +'</div>'
+    +'<div class="source-box">'+sources+'</div>'
+    +'</div>';
+ }).join('');
 }
 
 function renderUrlList(){
  const box=document.getElementById('url-list');
  if(!box)return;
  const origin=window.location.origin;
- box.innerHTML=TOKENS.length ? TOKENS.map(t=>{
-   const tokenUrl=`${origin}/${encodeURIComponent(t.url)}`;
-   const subNames=(t.subs||[]).map(id=>{const sub=SUBS.find(x=>x.id===id);return sub?sub.name:'已删除';});
-   return `
-<div class="sub-row">
-<div class="sub-head">
-<div style="min-width:0;">
-<div class="sub-name">${escapeJS(t.name)}</div>
-<div class="sub-count">URL：${escapeJS(t.url)}</div>
-</div>
-<div class="actions" style="margin-top:0;">
-<button type="button" class="secondary" onclick="copyValue('${escapeJS(tokenUrl)}')">复制</button>
-<button type="button" class="edit-button" onclick="editUrl('${escapeJS(t.url)}')">编辑</button>
-<button type="button" class="danger" onclick="deleteUrl('${escapeJS(t.url)}')">删除</button>
-</div>
-</div>
-<a class="link-url token-url" href="${escapeJS(tokenUrl)}" target="_blank">${escapeJS(tokenUrl)}</a>
-<div style="margin-top:8px;">${subNames.length ? subNames.map(x=>`<span class="chip">${escapeJS(x)}</span>`).join('') : '<span class="small-note">未绑定聚合节点</span>'}</div>
-</div>`;
- }).join('') : '<div class="empty">暂无订阅链接。创建订阅链接后才会产生公开订阅地址。</div>';
+ if(!TOKENS.length){
+   box.innerHTML='<div class="empty">暂无订阅链接。创建订阅链接后才会产生公开订阅地址。</div>';
+   return;
+ }
+ box.innerHTML=TOKENS.map(function(t){
+   const tokenUrl=origin+'/'+encodeURIComponent(t.url||'');
+   const name=escapeJS(t.name||'');
+   const path=escapeJS(t.url||'');
+   const safeUrl=escapeJS(tokenUrl);
+   const subNames=(t.subs||[]).map(function(id){
+     const sub=SUBS.find(function(x){return x.id===id;});
+     return sub?sub.name:'已删除';
+   });
+   const chips=subNames.length
+     ? subNames.map(function(x){return '<span class="chip">'+escapeJS(x)+'</span>';}).join('')
+     : '<span class="small-note">未绑定聚合节点</span>';
+   return '<div class="sub-row">'
+    +'<div class="sub-head">'
+    +'<div style="min-width:0;">'
+    +'<div class="sub-name">'+name+'</div>'
+    +'<div class="sub-count">URL：'+path+'</div>'
+    +'</div>'
+    +'<div class="actions" style="margin-top:0;">'
+    +'<button type="button" class="secondary" onclick="copyValue(\''+safeUrl+'\')">复制</button>'
+    +'<button type="button" class="edit-button" onclick="editUrl(\''+path+'\')">编辑</button>'
+    +'<button type="button" class="danger" onclick="deleteUrl(\''+path+'\')">删除</button>'
+    +'</div>'
+    +'</div>'
+    +'<a class="link-url token-url" href="'+safeUrl+'" target="_blank">'+safeUrl+'</a>'
+    +'<div style="margin-top:8px;">'+chips+'</div>'
+    +'</div>';
+ }).join('');
 }
 
 function refreshSubscriptionUI(){
