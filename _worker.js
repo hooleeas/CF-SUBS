@@ -1948,24 +1948,16 @@ ${getToolStyles()}
 <input id="url-edit-name" type="text" placeholder="例如：我的主订阅">
 </div>
 
-<div class="field" id="url-mode-field">
-<label>URL 生成方式</label>
-<select id="url-edit-mode" onchange="switchUrlMode()">
-<option value="random">随机生成</option>
-<option value="custom">自定义 URL</option>
-</select>
-</div>
-
 <div class="field">
-<label>URL</label>
-<input id="url-edit-value" type="text" placeholder="随机生成或输入自定义 URL">
-<div class="small-note" id="urlModeNote">随机 URL 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 URL。</div>
+<label>订阅链接路径</label>
+<input id="url-edit-value" type="text" placeholder="留空自动随机生成">
+<div class="small-note" id="urlModeNote">留空将自动生成类似 SURL 的 6 位随机路径；填写后使用自定义路径。</div>
 </div>
 
 <div class="field">
 <label>可使用的聚合节点</label>
 <div id="url-sub-list" class="check-list"></div>
-<div class="small-note">一个 URL 可以选择多个 SUB；一个 SUB 也可以被多个 URL 使用。</div>
+<div class="small-note">一个订阅链接可以选择多个 SUB；一个 SUB 也可以被多个订阅链接使用。</div>
 </div>
 
 <div class="actions" style="justify-content:flex-end;">
@@ -2159,7 +2151,7 @@ ${tokens.length ? tokens.map(t => {
 ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span>`).join('') : '<span class="small-note">未绑定聚合节点</span>'}
 </div>
 </div>`;
-}).join('') : `<div class="empty">暂无订阅链接。创建 URL 后才会产生公开订阅地址。</div>`}
+}).join('') : `<div class="empty">暂无订阅链接。创建订阅链接后才会产生公开订阅地址。</div>`}
 </div>
 </section>
 
@@ -2377,9 +2369,9 @@ function openUrlCreate(){
  editingUrlValue='';
  document.getElementById('urlModalTitle').textContent='创建订阅链接';
  document.getElementById('url-edit-name').value='';
- document.getElementById('url-edit-mode').value='random';
  document.getElementById('url-edit-value').value='';
- document.getElementById('url-edit-value').disabled=true;
+ document.getElementById('url-edit-value').disabled=false;
+ document.getElementById('urlModeNote').textContent='留空将自动生成类似 SURL 的 6 位随机路径；填写后使用自定义路径。';
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs([]);
  document.getElementById('urlModal').style.display='flex';
@@ -2387,30 +2379,15 @@ function openUrlCreate(){
 
 function closeUrlModal(){document.getElementById('urlModal').style.display='none'}
 
-function switchUrlMode(){
- const mode=document.getElementById('url-edit-mode').value;
- const input=document.getElementById('url-edit-value');
- if(editingUrlValue){
-   input.disabled=true;
-   return;
- }
- input.disabled=mode!=='custom';
- document.getElementById('urlModeNote').textContent=
-   mode==='random'
-   ? '随机 URL 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 URL。'
-   : '自定义 URL 只能使用字母、数字、下划线和短横线。';
-}
-
 function editUrl(token){
  const item=TOKENS.find(x=>x.url===token);
  if(!item)return;
  editingUrlValue=token;
  document.getElementById('urlModalTitle').textContent='编辑订阅链接';
  document.getElementById('url-edit-name').value=item.name||'';
- document.getElementById('url-edit-mode').value='custom';
  document.getElementById('url-edit-value').value=item.url||'';
  document.getElementById('url-edit-value').disabled=false;
- document.getElementById('urlModeNote').textContent='URL 可以直接修改；保存后旧 URL 立即失效，新 URL 立即生效。';
+ document.getElementById('urlModeNote').textContent='可直接修改订阅链接路径；保存后旧路径立即失效，新路径立即生效。';
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs(item.subs||[]);
  document.getElementById('urlModal').style.display='flex';
@@ -2433,7 +2410,7 @@ async function saveUrl(){
  }:{
    type:'url_create',
    name:document.getElementById('url-edit-name').value.trim(),
-   mode:document.getElementById('url-edit-mode').value,
+   mode:document.getElementById('url-edit-value').value.trim() ? 'custom' : 'random',
    url:document.getElementById('url-edit-value').value.trim(),
    subs:selected
  };
