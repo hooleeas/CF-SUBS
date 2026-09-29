@@ -65,6 +65,22 @@ const TOKEN_CHARS = 'ABCDEFGHJKMNPQRSTWXYZabcdefghijkmnpqrstwxyz2345678';
 
 export default {
     async fetch(request, env) {
+        try {
+            return await handleRequest(request, env);
+        } catch (error) {
+            console.error('CF-SUBS request error:', error);
+            return new Response('CF-SUBS Worker Error: ' + (error?.message || String(error)), {
+                status: 500,
+                headers: {
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'Cache-Control': 'no-store'
+                }
+            });
+        }
+    }
+};
+
+async function handleRequest(request, env) {
         const userAgentHeader = request.headers.get('User-Agent') || '';
         const userAgent = userAgentHeader.toLowerCase();
         const url = new URL(request.url);
@@ -385,8 +401,7 @@ export default {
             },
             publicToken
         );
-    }
-};
+}
 
 /* =========================================================
  * 配置 / 后台状态
@@ -1068,7 +1083,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
     }
 
     const sourceToken = new URL(request.url).searchParams.get('sourceToken') || token || '';
-    const conversionSeed = `${new URL(request.url).origin}/${await MD5MD5(runtime.fakeToken)}?token=${runtime.fakeToken}${sourceToken ? `&sourceToken=${encodeURIComponent(sourceToken)}` : ''}`;
+    const conversionSeed = `${new URL(request.url).origin}/${await MD5MD5(runtime.fakeToken)}?token=${encodeURIComponent(runtime.fakeToken)}${sourceToken ? `&sourceToken=${encodeURIComponent(sourceToken)}` : ''}`;
     let 订阅转换URL = conversionSeed;
     let 追加UA = 'v2rayn';
     const requestUrl = new URL(request.url);
@@ -1294,12 +1309,70 @@ function base64Decode(str) {
     return decoder.decode(bytes);
 }
 
+// Cloudflare Workers 不保证 WebCrypto 支持 MD5。
+// 使用纯 JS MD5，避免 crypto.subtle.digest('MD5') 触发 Worker 1101。
+function md5Hex(input) {
+    const data = new TextEncoder().encode(String(input));
+    const bitLen = data.length * 8;
+    const len = (((data.length + 8) >> 6) + 1) * 64;
+    const bytes = new Uint8Array(len);
+    bytes.set(data);
+    bytes[data.length] = 0x80;
+
+    const view = new DataView(bytes.buffer);
+    view.setUint32(len - 8, bitLen >>> 0, true);
+    view.setUint32(len - 4, Math.floor(bitLen / 0x100000000), true);
+
+    let a0 = 0x67452301;
+    let b0 = 0xefcdab89;
+    let c0 = 0x98badcfe;
+    let d0 = 0x10325476;
+
+    const s = [
+        7,12,17,22, 7,12,17,22, 7,12,17,22, 7,12,17,22,
+        5,9,14,20, 5,9,14,20, 5,9,14,20, 5,9,14,20,
+        4,11,16,23, 4,11,16,23, 4,11,16,23, 4,11,16,23,
+        6,10,15,21, 6,10,15,21, 6,10,15,21, 6,10,15,21
+    ];
+    const K = new Uint32Array(64);
+    for (let i = 0; i < 64; i++) {
+        K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000) >>> 0;
+    }
+
+    const leftRotate = (x, amount) => ((x << amount) | (x >>> (32 - amount))) >>> 0;
+
+    for (let offset = 0; offset < bytes.length; offset += 64) {
+        const M = new Uint32Array(16);
+        for (let i = 0; i < 16; i++) M[i] = view.getUint32(offset + i * 4, true);
+
+        let A = a0, B = b0, C = c0, D = d0;
+        for (let i = 0; i < 64; i++) {
+            let F, g;
+            if (i < 16) { F = (B & C) | (~B & D); g = i; }
+            else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+            else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+            else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+            F = (F + A + K[i] + M[g]) >>> 0;
+            A = D; D = C; C = B; B = (B + leftRotate(F, s[i])) >>> 0;
+        }
+        a0 = (a0 + A) >>> 0;
+        b0 = (b0 + B) >>> 0;
+        c0 = (c0 + C) >>> 0;
+        d0 = (d0 + D) >>> 0;
+    }
+
+    const out = new Uint8Array(16);
+    const outView = new DataView(out.buffer);
+    outView.setUint32(0, a0, true);
+    outView.setUint32(4, b0, true);
+    outView.setUint32(8, c0, true);
+    outView.setUint32(12, d0, true);
+    return Array.from(out, b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function MD5MD5(text) {
-    const encoder = new TextEncoder();
-    const firstPass = await crypto.subtle.digest('MD5', encoder.encode(text));
-    const firstHex = Array.from(new Uint8Array(firstPass)).map(b => b.toString(16).padStart(2, '0')).join('');
-    const secondPass = await crypto.subtle.digest('MD5', encoder.encode(firstHex.slice(7, 27)));
-    return Array.from(new Uint8Array(secondPass)).map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+    const firstHex = md5Hex(text);
+    return md5Hex(firstHex.slice(7, 27));
 }
 
 function clashFix(content) {
@@ -1411,7 +1484,7 @@ async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
     }));
 }
 
-function isValidBase64(str) { return /^[A-Za-z0-9+/=]+$/.test(str.replace(/\s/g, '')); }
+function isValidBase64(str) { const v = String(str || '').replace(/\s/g, ''); return v.length >= 4 && v.length % 4 === 0 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(v); }
 
 async function 迁移地址列表(env, txt = 'ADD.txt') {
     const 旧数据 = await env.KV.get(`/${txt}`);
