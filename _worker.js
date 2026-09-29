@@ -1599,7 +1599,7 @@ function getToolStyles() {
         .status-error { background: rgba(244, 67, 54, 0.1); color: #c62828; border: 1px solid rgba(244, 67, 54, 0.2); }
         #current-qrcode { display: none; margin-top: 12px; padding: 12px; border: 1px solid rgba(229, 229, 223, 0.6); border-radius: 12px; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); width: fit-content; max-width: 100%; }
         .hidden { display: none !important; }
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
+        .modal-overlay { pointer-events: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
         .modal-content { background: rgba(255, 255, 255, 0.95); border-radius: 20px; padding: 24px; width: 90%; max-width: 480px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); border: 1px solid rgba(255, 255, 255, 0.5); transition: background 0.3s, border-color 0.3s; margin: 20px auto; }
         @media (prefers-color-scheme: dark) {
             body { background: #121212; color: #e0e0e0; }
@@ -1926,7 +1926,7 @@ ${getToolStyles()}
 <div id="copyNotice" class="toast"></div>
 
 <!-- SUB Modal -->
-<div id="subsModal" class="modal-overlay">
+<div id="subsModal" class="modal-overlay" style="display:none;pointer-events:none;">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">📦 <span id="subsModalTitle">创建聚合节点</span></h2>
 <div class="field">
@@ -1950,7 +1950,7 @@ ${getToolStyles()}
 </div>
 
 <!-- URL Modal -->
-<div id="urlModal" class="modal-overlay">
+<div id="urlModal" class="modal-overlay" style="display:none;pointer-events:none;">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🔗 <span id="urlModalTitle">创建订阅链接</span></h2>
 
@@ -1988,7 +1988,7 @@ ${getToolStyles()}
 </div>
 
 <!-- 安全设置 Modal -->
-<div id="securityModal" class="modal-overlay">
+<div id="securityModal" class="modal-overlay" style="display:none;pointer-events:none;">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🛡️ 账户与安全设置</h2>
 <div class="field"><label>后台登录账号 (USER)</label><input id="sec-user" type="text" value="${escapeHTML(settings.user || '')}" placeholder="例如：admin"></div>
@@ -2004,7 +2004,7 @@ ${getToolStyles()}
 </div>
 
 <!-- 主页设置 Modal -->
-<div id="fakeModal" class="modal-overlay">
+<div id="fakeModal" class="modal-overlay" style="display:none;pointer-events:none;">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🏠 主页设置</h2>
 <div class="status-indicator ${fakeStatusCss}" style="margin-bottom:16px;">${fakeStatusHtml}</div>
@@ -2182,23 +2182,27 @@ const SETTING_VALUES = ${JSON.stringify({
 })};
 let editingSub = '';
 let editingUrlValue = '';
+window.addEventListener('error', function(e){ console.error('CF-SUBS UI error:', e.error || e.message); });
 
 function showToast(message){
  const el=document.getElementById('copyNotice');
+ if(!el)return;
  el.textContent=message;
  el.style.display='block';
  clearTimeout(window.__toast);
- window.__toast=setTimeout(()=>el.style.display='none',1500);
+ window.__toast=setTimeout(function(){el.style.display='none';},1500);
 }
 
 function copyValue(value){
  navigator.clipboard.writeText(value).then(()=>showToast('已复制到剪贴板')).catch(()=>showToast('复制失败，请手动复制'));
 }
 
-function openSecurityModal(){document.getElementById('securityModal').style.display='flex'}
-function closeSecurityModal(){document.getElementById('securityModal').style.display='none'}
-function openFakeModal(){document.getElementById('fakeModal').style.display='flex'}
-function closeFakeModal(){document.getElementById('fakeModal').style.display='none'}
+function showModal(id){ const el=document.getElementById(id); if(!el)return; el.style.display='flex'; el.style.pointerEvents='auto'; }
+function hideModal(id){ const el=document.getElementById(id); if(!el)return; el.style.display='none'; el.style.pointerEvents='none'; }
+function openSecurityModal(){showModal('securityModal')}
+function closeSecurityModal(){hideModal('securityModal')}
+function openFakeModal(){showModal('fakeModal')}
+function closeFakeModal(){hideModal('fakeModal')}
 
 function switchFakeMode(){
  const mode=document.getElementById('fake-mode').value;
@@ -2265,6 +2269,10 @@ function saveConfig(button,type){
 
 let settingModalField='';
 
+function escapeHTML(value){
+ return String(value ?? '').replace(/[&<>\"']/g, function(ch){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]); });
+}
+
 function openSettingModal(field){
  settingModalField=field;
  const modal=document.getElementById('settingModal');
@@ -2284,12 +2292,13 @@ function openSettingModal(field){
  title.textContent=item.title;
  body.innerHTML=item.html;
  modal.style.display='flex';
- setTimeout(()=>document.getElementById('setting-modal-input')?.focus(),50);
+ modal.style.pointerEvents='auto';
+ setTimeout(()=>{ const input=document.getElementById('setting-modal-input'); if(input) input.focus(); },50);
 }
 
 function closeSettingModal(){
  const modal=document.getElementById('settingModal');
- if(modal)modal.style.display='none';
+ if(modal){modal.style.display='none';modal.style.pointerEvents='none';}
  settingModalField='';
 }
 
@@ -2328,10 +2337,10 @@ function openSubCreate(){
  document.getElementById('sub-edit-sources').value='';
  document.getElementById('sub-edit-enabled').checked=true;
  document.getElementById('subSaveStatus').textContent='';
- document.getElementById('subsModal').style.display='flex';
+ showModal('subsModal');
 }
 
-function closeSubsModal(){document.getElementById('subsModal').style.display='none'}
+function closeSubsModal(){hideModal('subsModal')}
 
 function editSub(id){
  const item=SUBS.find(x=>x.id===id);
@@ -2342,7 +2351,7 @@ function editSub(id){
  document.getElementById('sub-edit-sources').value=(item.sources||[]).join('\\n');
  document.getElementById('sub-edit-enabled').checked=item.enabled!==false;
  document.getElementById('subSaveStatus').textContent='';
- document.getElementById('subsModal').style.display='flex';
+ showModal('subsModal');
 }
 
 async function saveSubs(){
@@ -2405,10 +2414,10 @@ function openUrlCreate(){
  document.getElementById('url-edit-value').disabled=true;
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs([]);
- document.getElementById('urlModal').style.display='flex';
+ showModal('urlModal');
 }
 
-function closeUrlModal(){document.getElementById('urlModal').style.display='none'}
+function closeUrlModal(){hideModal('urlModal')}
 
 function switchUrlMode(){
  const mode=document.getElementById('url-edit-mode').value;
@@ -2436,7 +2445,7 @@ function editUrl(token){
  document.getElementById('urlModeNote').textContent='URL 可以直接修改；保存后旧 URL 立即失效，新 URL 立即生效。';
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs(item.subs||[]);
- document.getElementById('urlModal').style.display='flex';
+ showModal('urlModal');
 }
 
 async function saveUrl(){
