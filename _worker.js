@@ -60,7 +60,7 @@ let fakeCode = '';
 const SUBS_PREFIX = 'SUBS:';
 const TOKEN_PREFIX = 'TOKEN:';
 const TOKEN_CHARS = 'ABCDEFGHJKMNPQRSTWXYZabcdefghijkmnpqrstwxyz2345678';
-const DEFAULT_ADMIN_PATH = '/admin';
+const DEFAULT_ADMIN_PATH = 'admin';
 
 export default {
     async fetch(request, env) {
@@ -125,6 +125,7 @@ async function handleRequest(request, env) {
         }
 
         const adminPath = normalizeAdminPath(kvConfig?.adminPath || DEFAULT_ADMIN_PATH);
+        if (!adminPath) throw new Error('管理员后台路径配置无效');
 
         // 环境变量仍然支持旧 CF-SUB 的 GUEST / GUESTTOKEN
         guestToken = env.GUESTTOKEN || env.GUEST || guestToken;
@@ -168,18 +169,18 @@ async function handleRequest(request, env) {
         ].some(keyword => userAgent.includes(keyword));
 
         // 退出登录：清除管理员会话并直接返回主页
-        if (url.searchParams.has('logout') || url.pathname === `${adminPath}/logout`) {
-            return new Response('正在退出...', {
-                status: 302,
+        if (url.searchParams.has('logout') || url.pathname === `/${adminPath}/logout`) {
+            return new Response(null, {
+                status: 204,
                 headers: {
-                    'Location': '/',
+                    'Cache-Control': 'no-store',
                     'Set-Cookie': 'CF_SUB_ADMIN=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax'
                 }
             });
         }
 
         // ==================== 管理后台 ====================
-        if (url.pathname === adminPath) {
+        if (url.pathname === `/${adminPath}`) {
             if (isAdminLoginEnabled(adminUser, adminPass)) {
                 const isLoggedIn = await isAdminLoggedIn(request, adminUser, adminPass);
                 if (!isLoggedIn) {
@@ -613,9 +614,8 @@ async function listTokens(env) {
 function normalizeAdminPath(value) {
     let path = String(value || '').trim();
     if (!path) return DEFAULT_ADMIN_PATH;
-    if (!path.startsWith('/')) path = '/' + path;
-    path = path.replace(/\/{2,}/g, '/').replace(/\/$/, '');
-    if (!/^\/[A-Za-z0-9_-]{2,60}$/.test(path)) return '';
+    path = path.replace(/^\/+/, '').replace(/\/+$/, '');
+    if (!/^[A-Za-z0-9_-]{2,60}$/.test(path)) return '';
     return path;
 }
 
@@ -750,11 +750,11 @@ async function handleAdmin(request, env, runtime) {
                 const requestedAdminPath = normalizeAdminPath(data.settings?.adminPath || old.adminPath || DEFAULT_ADMIN_PATH);
                 if (!requestedAdminPath) return new Response('管理后台路径无效', { status: 400 });
                 if (requestedAdminPath !== normalizeAdminPath(old.adminPath || DEFAULT_ADMIN_PATH)) {
-                    const reservedPath = ['/','/api','/login','/logout','/favicon.ico'];
+                    const reservedPath = ['api','login','logout','favicon.ico'];
                     if (reservedPath.includes(requestedAdminPath.toLowerCase())) {
                         return new Response('该管理后台路径不可使用', { status: 400 });
                     }
-                    const tokenConflict = await getToken(env, requestedAdminPath.slice(1));
+                    const tokenConflict = await getToken(env, requestedAdminPath);
                     if (tokenConflict) return new Response('该路径已被访客 TOKEN 占用，请换一个路径', { status: 409 });
                 }
 
@@ -1711,17 +1711,27 @@ function renderToolScripts(includeEditor = false) {
                         fakeMode: document.getElementById('fake-mode') ? document.getElementById('fake-mode').value : '',
                         fakeUrl: document.getElementById('fake-url') ? document.getElementById('fake-url').value : '',
                         fakeUrl302: document.getElementById('fake-url302') ? document.getElementById('fake-url302').value : '',
-                        fakeCode: document.getElementById('fake-code') ? document.getElementById('fake-code').value : ''
+                        fakeCode: document.getElementById('fake-code') ? document.getElementById('fake-code').value : '',
+                        adminPath: document.getElementById('sec-admin-path') ? document.getElementById('sec-admin-path').value : DEFAULT_ADMIN_PATH
                     }
                 }),
                 headers: { 'Content-Type': 'application/json' }
             }).then(function (res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
-            }).then(function () {
+            }).then(async function (res) {
+                const body = await res.text();
+                if (!res.ok) throw new Error(body || ('HTTP ' + res.status));
+                let data = {};
+                try { data = JSON.parse(body); } catch (e) {}
                 statusElem.textContent = '已保存 ' + new Date().toLocaleString();
                 statusElem.style.color = 'var(--coral, #2e7d32)';
-                setTimeout(() => window.location.reload(), 500);
+                if (isSec && data.adminPath) {
+                    const newPath = String(data.adminPath).replace(/^\/+/, '').replace(/\/+$/, '');
+                    setTimeout(() => window.location.replace('/' + newPath), 300);
+                } else {
+                    setTimeout(() => window.location.reload(), 500);
+                }
             }).catch(function (err) {
                 statusElem.textContent = '保存失败: 网络异常或超时';
                 statusElem.style.color = '#c62828';
@@ -1960,7 +1970,7 @@ ${getToolStyles()}
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🛡️ 账户与安全设置</h2>
 <div class="field"><label>旧版访客入口 (GUEST)</label><input id="sec-guest" type="text" value="${escapeHTML(settings.guest || '')}" placeholder="仅用于兼容旧 CF-SUB；新项目请使用访客 TOKEN"></div>
-<div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(settings.adminPath || '/admin')}" placeholder="例如：/admin 或 /manage"><div class="section-note">修改后后台入口会立即切换，建议使用以 / 开头的自定义路径。</div></div>
+<div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(settings.adminPath || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage"><div class="section-note">修改后后台入口会立即切换，只填写路径单词，例如 admin 或 manage，不需要填写 /。</div></div>
 <div class="field"><label>后台登录账号 (USER)</label><input id="sec-user" type="text" value="${escapeHTML(settings.user || '')}" placeholder="例如：admin"></div>
 <div class="field"><label>后台登录密码 (PASS)</label><input id="sec-pass" type="password" value="" placeholder="留空则不修改当前密码"></div>
 <div class="field"><label>确认登录密码</label><input id="sec-pass2" type="password" value="" placeholder="留空则不修改当前密码"></div>
@@ -2160,7 +2170,7 @@ function switchFakeMode(){
 
 async function logoutAdmin(){
   try{
-    await fetch(ADMIN_PATH+'/logout',{method:'GET',credentials:'same-origin',cache:'no-store'});
+    await fetch('/'+ADMIN_PATH+'/logout',{method:'GET',credentials:'same-origin',cache:'no-store'});
   }catch(e){}
   location.replace('/');
 }
@@ -2198,14 +2208,23 @@ function saveConfig(button,type){
        fakeMode:document.getElementById('fake-mode')?.value||'',
        fakeUrl:document.getElementById('fake-url')?.value||'',
        fakeUrl302:document.getElementById('fake-url302')?.value||'',
-       fakeCode:document.getElementById('fake-code')?.value||''
+       fakeCode:document.getElementById('fake-code')?.value||'',
+       adminPath:document.getElementById('sec-admin-path')?.value||DEFAULT_ADMIN_PATH
      }
    })
  }).then(async res=>{
-   if(!res.ok)throw new Error(await res.text());
+   const body=await res.text();
+   if(!res.ok)throw new Error(body || ('HTTP '+res.status));
+   let data={};
+   try{ data=JSON.parse(body); }catch(e){}
    statusElem.textContent='已保存 '+new Date().toLocaleString();
    statusElem.style.color='#2e7d32';
-   setTimeout(()=>location.reload(),500);
+   if(isSec && data.adminPath){
+     const newPath=String(data.adminPath).replace(/^\/+/, '').replace(/\/+$/, '');
+     setTimeout(()=>location.replace('/'+newPath),300);
+   }else{
+     setTimeout(()=>location.reload(),500);
+   }
  }).catch(err=>{
    statusElem.textContent='保存失败: '+err.message;
    statusElem.style.color='#c62828';
