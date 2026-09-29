@@ -60,6 +60,7 @@ let fakeCode = '';
 const SUBS_PREFIX = 'SUBS:';
 const TOKEN_PREFIX = 'TOKEN:';
 const TOKEN_CHARS = 'ABCDEFGHJKMNPQRSTWXYZabcdefghijkmnpqrstwxyz2345678';
+const DEFAULT_ADMIN_PATH = '/admin';
 
 export default {
     async fetch(request, env) {
@@ -95,11 +96,12 @@ async function handleRequest(request, env) {
         fakeCode = env.CODE || '';
 
         // 读取 KV 配置
+        let kvConfig = {};
         if (env.KV) {
             try {
                 const kvConfigStr = await env.KV.get('CONFIG.json');
                 if (kvConfigStr) {
-                    const kvConfig = JSON.parse(kvConfigStr);
+                    kvConfig = JSON.parse(kvConfigStr);
 
                     FileName = kvConfig.subName || 'CF-SUBS';
 
@@ -121,6 +123,8 @@ async function handleRequest(request, env) {
                 console.error('解析 KV 配置失败', e);
             }
         }
+
+        const adminPath = normalizeAdminPath(kvConfig?.adminPath || DEFAULT_ADMIN_PATH);
 
         // 环境变量仍然支持旧 CF-SUB 的 GUEST / GUESTTOKEN
         guestToken = env.GUESTTOKEN || env.GUEST || guestToken;
@@ -163,19 +167,19 @@ async function handleRequest(request, env) {
             'shadowrocket', 'subconverter'
         ].some(keyword => userAgent.includes(keyword));
 
-        // 退出登录：保留原 CF-SUB 的 ?logout=1 行为，同时支持 /admin/logout
-        if (url.searchParams.has('logout') || url.pathname === '/admin/logout') {
+        // 退出登录：清除管理员会话并直接返回主页
+        if (url.searchParams.has('logout') || url.pathname === `${adminPath}/logout`) {
             return new Response('正在退出...', {
                 status: 302,
                 headers: {
-                    'Location': '/admin',
+                    'Location': '/',
                     'Set-Cookie': 'CF_SUB_ADMIN=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax'
                 }
             });
         }
 
         // ==================== 管理后台 ====================
-        if (url.pathname === '/admin') {
+        if (url.pathname === adminPath) {
             if (isAdminLoginEnabled(adminUser, adminPass)) {
                 const isLoggedIn = await isAdminLoggedIn(request, adminUser, adminPass);
                 if (!isLoggedIn) {
@@ -606,6 +610,15 @@ async function listTokens(env) {
     return result;
 }
 
+function normalizeAdminPath(value) {
+    let path = String(value || '').trim();
+    if (!path) return DEFAULT_ADMIN_PATH;
+    if (!path.startsWith('/')) path = '/' + path;
+    path = path.replace(/\/{2,}/g, '/').replace(/\/$/, '');
+    if (!/^\/[A-Za-z0-9_-]{2,60}$/.test(path)) return '';
+    return path;
+}
+
 function normalizeName(value) {
     return String(value || '').trim().replace(/\s+/g, ' ');
 }
@@ -734,9 +747,20 @@ async function handleAdmin(request, env, runtime) {
 
             if (data.type === 'config') {
                 const old = await getConfig(env);
+                const requestedAdminPath = normalizeAdminPath(data.settings?.adminPath || old.adminPath || DEFAULT_ADMIN_PATH);
+                if (!requestedAdminPath) return new Response('管理后台路径无效', { status: 400 });
+                if (requestedAdminPath !== normalizeAdminPath(old.adminPath || DEFAULT_ADMIN_PATH)) {
+                    const reservedPath = ['/','/api','/login','/logout','/favicon.ico'];
+                    if (reservedPath.includes(requestedAdminPath.toLowerCase())) {
+                        return new Response('该管理后台路径不可使用', { status: 400 });
+                    }
+                    const tokenConflict = await getToken(env, requestedAdminPath.slice(1));
+                    if (tokenConflict) return new Response('该路径已被访客 TOKEN 占用，请换一个路径', { status: 409 });
+                }
 
                 const next = {
                     subName: normalizeName(data.settings?.subName) || 'CF-SUBS',
+                    adminPath: requestedAdminPath,
                     subApi: String(data.settings?.subApi || '').trim(),
                     subConfig: String(data.settings?.subConfig || '').trim(),
                     noAds: String(data.settings?.noAds || '').trim(),
@@ -755,7 +779,7 @@ async function handleAdmin(request, env, runtime) {
                 };
 
                 await env.KV.put('CONFIG.json', JSON.stringify(next));
-                return new Response('设置保存成功');
+                return jsonResponse({ ok: true, adminPath: requestedAdminPath });
             }
 
             if (data.type === 'sub_create') {
@@ -946,6 +970,7 @@ async function handleAdmin(request, env, runtime) {
 async function getConfig(env) {
     const defaults = {
         subName: 'CF-SUBS',
+        adminPath: DEFAULT_ADMIN_PATH,
         subApi: '',
         subConfig: '',
         noAds: '',
@@ -1935,6 +1960,7 @@ ${getToolStyles()}
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🛡️ 账户与安全设置</h2>
 <div class="field"><label>旧版访客入口 (GUEST)</label><input id="sec-guest" type="text" value="${escapeHTML(settings.guest || '')}" placeholder="仅用于兼容旧 CF-SUB；新项目请使用访客 TOKEN"></div>
+<div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(settings.adminPath || '/admin')}" placeholder="例如：/admin 或 /manage"><div class="section-note">修改后后台入口会立即切换，建议使用以 / 开头的自定义路径。</div></div>
 <div class="field"><label>后台登录账号 (USER)</label><input id="sec-user" type="text" value="${escapeHTML(settings.user || '')}" placeholder="例如：admin"></div>
 <div class="field"><label>后台登录密码 (PASS)</label><input id="sec-pass" type="password" value="" placeholder="留空则不修改当前密码"></div>
 <div class="field"><label>确认登录密码</label><input id="sec-pass2" type="password" value="" placeholder="留空则不修改当前密码"></div>
@@ -1989,7 +2015,7 @@ ${getToolStyles()}
 <div style="display:flex;gap:8px;flex-wrap:wrap;">
 <button type="button" onclick="openFakeModal()">🏠 主页</button>
 <button type="button" onclick="openSecurityModal()">🛡️ 安全</button>
-<a class="button danger" href="/admin/logout">🚪 退出</a>
+<button type="button" class="danger" onclick="logoutAdmin()">🚪 退出</button>
 </div>
 </header>
 
@@ -2097,17 +2123,13 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 </div>
 </section>
 
-<section class="panel">
-<h2 class="section-title">旧版兼容</h2>
-<div class="section-note">原 CF-SUB 的 LINK.txt、LINK、LINKSUB、GUEST 等仍保留读取兼容；新建项目不依赖这些数据。</div>
-</section>
-
 <div id="current-qrcode"></div>
 </main>
 
 <script>
 const SUBS = ${JSON.stringify(subs)};
 const TOKENS = ${JSON.stringify(tokens)};
+const ADMIN_PATH = ${JSON.stringify(settings.adminPath || DEFAULT_ADMIN_PATH)};
 let editingSub = '';
 let editingTokenValue = '';
 
@@ -2136,6 +2158,13 @@ function switchFakeMode(){
  if(mode==='3')document.getElementById('fake-group-code').classList.remove('hidden');
 }
 
+async function logoutAdmin(){
+  try{
+    await fetch(ADMIN_PATH+'/logout',{method:'GET',credentials:'same-origin',cache:'no-store'});
+  }catch(e){}
+  location.replace('/');
+}
+
 function saveConfig(button,type){
  const isSec=type==='sec';
  const isFake=type==='fake';
@@ -2153,7 +2182,7 @@ function saveConfig(button,type){
  const oldText=button.textContent;
  button.textContent='保存中...';
 
- fetch('/admin',{
+ fetch(ADMIN_PATH,{
    method:'POST',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({
@@ -2220,7 +2249,7 @@ async function saveSubs(){
    enabled:document.getElementById('sub-edit-enabled').checked
  };
 
- const res=await fetch('/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const res=await fetch(ADMIN_PATH,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  const text=await res.text();
 
  if(!res.ok){showToast(text||'保存失败');return}
@@ -2232,7 +2261,7 @@ async function deleteSub(id){
  if(!item)return;
  if(!confirm('确定删除“'+item.name+'”吗？\\n已经绑定它的 TOKEN 会自动解除绑定。'))return;
 
- const res=await fetch('/admin',{
+ const res=await fetch(ADMIN_PATH,{
    method:'POST',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({type:'sub_delete',id})
@@ -2325,7 +2354,7 @@ async function saveToken(){
    subs:selected
  };
 
- const res=await fetch('/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const res=await fetch(ADMIN_PATH,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  const text=await res.text();
 
  if(!res.ok){showToast(text||'保存失败');return}
@@ -2337,7 +2366,7 @@ async function deleteToken(token){
  if(!item)return;
  if(!confirm('确定删除“'+item.name+'”吗？'))return;
 
- const res=await fetch('/admin',{
+ const res=await fetch(ADMIN_PATH,{
    method:'POST',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({type:'token_delete',token})
