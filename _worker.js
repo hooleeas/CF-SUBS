@@ -774,12 +774,24 @@ async function handleAdmin(request, env, runtime) {
                 return jsonResponse({ ok: true, adminPath: next.adminPath });
             }
 
+            if (data.type === 'config_partial') {
+                const old = await getConfig(env);
+                const field = String(data.field || '').trim();
+                if (!['subApi', 'subConfig', 'noAds'].includes(field)) {
+                    return new Response('无效的设置项', { status: 400 });
+                }
+                const next = { ...old };
+                next[field] = String(data.value ?? '').trim();
+                await env.KV.put('CONFIG.json', JSON.stringify(next));
+                return jsonResponse({ ok: true });
+            }
+
             if (data.type === 'sub_create') {
                 const name = normalizeName(data.name);
                 const sources = cleanSourceList(data.sources);
 
-                if (!validName(name)) return new Response('SUBS 名称不能为空且不能超过 80 个字符', { status: 400 });
-                if (await isSubNameUsed(env, name)) return new Response('SUBS 名称已存在，不能重名', { status: 409 });
+                if (!validName(name)) return new Response('SUB 名称不能为空且不能超过 80 个字符', { status: 400 });
+                if (await isSubNameUsed(env, name)) return new Response('SUB 名称已存在，不能重名', { status: 409 });
                 if (!sources.length) return new Response('至少添加一个订阅地址或单节点', { status: 400 });
 
                 const id = makeSubId();
@@ -804,8 +816,8 @@ async function handleAdmin(request, env, runtime) {
                 const name = normalizeName(data.name);
                 const sources = cleanSourceList(data.sources);
 
-                if (!validName(name)) return new Response('SUBS 名称不能为空且不能超过 80 个字符', { status: 400 });
-                if (await isSubNameUsed(env, name, id)) return new Response('SUBS 名称已存在，不能重名', { status: 409 });
+                if (!validName(name)) return new Response('SUB 名称不能为空且不能超过 80 个字符', { status: 400 });
+                if (await isSubNameUsed(env, name, id)) return new Response('SUB 名称已存在，不能重名', { status: 409 });
                 if (!sources.length) return new Response('至少添加一个订阅地址或单节点', { status: 400 });
 
                 const item = {
@@ -1287,6 +1299,8 @@ async function nginx(titleName) {
 <title>${escapeHTML(titleName)}</title>
 <style>
     body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
+
+.setting-view{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}.setting-edit{margin-top:18px;padding-top:18px;border-top:1px solid var(--border,#e5e7eb)}
 </style>
 </head>
 <body>
@@ -1919,7 +1933,7 @@ ${getToolStyles()}
 <div class="field">
 <label>订阅地址 / 自建节点</label>
 <textarea id="sub-edit-sources" style="min-height:220px" placeholder="一行一个订阅地址或节点"></textarea>
-<div class="section-note">可以同时放订阅 URL 和自建节点。SUBS 本身不会生成公开订阅链接。</div>
+<div class="section-note">可以同时放订阅 URL 和自建节点。SUB 本身不会生成公开订阅链接。</div>
 </div>
 <div class="field">
 <label><input id="sub-edit-enabled" type="checkbox" checked style="width:18px;height:18px;vertical-align:middle;margin-right:6px;">启用此聚合节点</label>
@@ -2039,41 +2053,9 @@ ${getToolStyles()}
 </section>
 
 <section class="panel">
-<h2 class="section-title">订阅转换后端 SUBAPI</h2>
-<div class="field">
-<input id="config-subapi" type="text" value="${escapeHTML(settings.subApi || '')}" placeholder="[默认值]">
-<div class="status-indicator ${status.adminApiCss}" style="margin-top:8px;">${status.adminApiHtml}</div>
-<div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
-<a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
-</div>
-</section>
-
-<section class="panel">
-<h2 class="section-title">订阅转换规则 SUBCONFIG</h2>
-<div class="field">
-<textarea id="config-subconfig" style="min-height:80px" placeholder="[默认值]">${escapeHTML(settings.subConfig || '')}</textarea>
-<div class="status-indicator ${status.adminConfigCss}" style="margin-top:8px;">${status.adminConfigHtml}</div>
-<div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
-<a class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
-</div>
-</section>
-
-<section class="panel">
-<h2 class="section-title">去广告关键字 NOADS</h2>
-<div class="field">
-<textarea id="config-noads" style="min-height:80px" placeholder="示例: 加入TG群, 订阅YouTube频道, https://t.me ......">${escapeHTML(settings.noAds || '')}</textarea>
-<div class="section-note">使用英文逗号、空格或换行分隔</div>
-<div class="actions" style="margin-top:16px;">
-<button type="button" onclick="saveConfig(this,'main')">保存全局设置并重载</button>
-<span id="configSaveStatus" class="muted"></span>
-</div>
-</div>
-</section>
-
-<section class="panel">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
 <div>
-<h2 class="section-title">聚合节点 (SUB)</h2>
+<h2 class="section-title">聚合节点（SUB）</h2>
 <div class="section-note">SUB 是聚合节点配置，不是订阅链接。默认为空，可创建多个且名称不能重复。</div>
 </div>
 <button type="button" onclick="openSubCreate()">＋ 创建聚合节点</button>
@@ -2101,10 +2083,10 @@ ${subs.length ? subs.map(s => `
 <section class="panel">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
 <div>
-<h2 class="section-title">订阅链接 (URL)</h2>
-<div class="section-note">创建链接才会生成公开订阅入口。URL 可以绑定一个或多个 SUB。</div>
+<h2 class="section-title">订阅链接（URL）</h2>
+<div class="section-note">创建订阅链接才会生成公开订阅入口。URL 可以绑定一个或多个 SUB。</div>
 </div>
-<button type="button" onclick="openUrlCreate()">+ 创建订阅链接</button>
+<button type="button" onclick="openUrlCreate()">＋ 创建订阅链接</button>
 </div>
 
 <div class="sub-grid" style="margin-top:12px;">
@@ -2133,10 +2115,55 @@ ${tokens.length ? tokens.map(t => {
 ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span>`).join('') : '<span class="small-note">未绑定聚合节点</span>'}
 </div>
 </div>`;
-}).join('') : `<div class="empty">暂无订阅链接。创建 URL 后才会产生公开订阅地址。</div>`}
+}).join('') : `<div class="empty">暂无订阅链接。创建订阅链接后才会产生公开订阅地址。</div>`}
 </div>
 </section>
 
+<section class="panel setting-card">
+<div class="setting-view">
+<div>
+<h2 class="section-title">订阅转换后端 SUBAPI</h2>
+<div class="status-indicator ${status.adminApiCss}" style="margin-top:8px;">${status.adminApiHtml}</div>
+<div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
+<a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
+</div>
+<button type="button" class="secondary" onclick="toggleSettingEdit('subApi')">编辑</button>
+</div>
+<div class="setting-edit hidden" id="setting-edit-subApi">
+<div class="field"><input id="setting-subApi" type="text" value="${escapeHTML(settings.subApi || '')}" placeholder="留空使用默认值"></div>
+<div class="actions"><button type="button" onclick="saveSetting('subApi',this)">保存</button><button type="button" class="secondary" onclick="toggleSettingEdit('subApi',false)">取消</button><span id="setting-status-subApi" class="muted"></span></div>
+</div>
+</section>
+
+<section class="panel setting-card">
+<div class="setting-view">
+<div>
+<h2 class="section-title">订阅转换规则 SUBCONFIG</h2>
+<div class="status-indicator ${status.adminConfigCss}" style="margin-top:8px;">${status.adminConfigHtml}</div>
+<div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
+<a class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
+</div>
+<button type="button" class="secondary" onclick="toggleSettingEdit('subConfig')">编辑</button>
+</div>
+<div class="setting-edit hidden" id="setting-edit-subConfig">
+<div class="field"><textarea id="setting-subConfig" style="min-height:80px" placeholder="留空使用默认值">${escapeHTML(settings.subConfig || '')}</textarea></div>
+<div class="actions"><button type="button" onclick="saveSetting('subConfig',this)">保存</button><button type="button" class="secondary" onclick="toggleSettingEdit('subConfig',false)">取消</button><span id="setting-status-subConfig" class="muted"></span></div>
+</div>
+</section>
+
+<section class="panel setting-card">
+<div class="setting-view">
+<div>
+<h2 class="section-title">节点屏蔽（NOADS）</h2>
+<div class="section-note" style="margin-top:8px;">${settings.noAds ? `已设置 ${settings.noAds.split(/[, \r\n]+/).filter(Boolean).length} 个屏蔽关键词` : '当前未设置屏蔽关键词'}</div>
+</div>
+<button type="button" class="secondary" onclick="toggleSettingEdit('noAds')">编辑</button>
+</div>
+<div class="setting-edit hidden" id="setting-edit-noAds">
+<div class="field"><textarea id="setting-noAds" style="min-height:80px" placeholder="示例: 加入TG群, 订阅YouTube频道, https://t.me ......">${escapeHTML(settings.noAds || '')}</textarea><div class="section-note">使用英文逗号、空格或换行分隔</div></div>
+<div class="actions"><button type="button" onclick="saveSetting('noAds',this)">保存</button><button type="button" class="secondary" onclick="toggleSettingEdit('noAds',false)">取消</button><span id="setting-status-noAds" class="muted"></span></div>
+</div>
+</section>
 
 <div id="current-qrcode"></div>
 </main>
@@ -2225,6 +2252,38 @@ function saveConfig(button,type){
    button.disabled=false;
    button.textContent=oldText;
  });
+}
+
+function toggleSettingEdit(field, force){
+ const box=document.getElementById('setting-edit-'+field);
+ if(!box)return;
+ const show = force === undefined ? box.classList.contains('hidden') : !!force;
+ box.classList.toggle('hidden', !show);
+ if(show){ const input=document.getElementById('setting-'+field); if(input) input.focus(); }
+}
+
+async function saveSetting(field, button){
+ const input=document.getElementById('setting-'+field);
+ const status=document.getElementById('setting-status-'+field);
+ if(!input||!status)return;
+ button.disabled=true;
+ const oldText=button.textContent;
+ button.textContent='保存中...';
+ status.textContent='';
+ try{
+   const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'config_partial',field,value:input.value})});
+   const msg=await res.text();
+   if(!res.ok)throw new Error(msg||'保存失败');
+   status.textContent='已保存';
+   status.style.color='#2e7d32';
+   setTimeout(()=>location.reload(),350);
+ }catch(err){
+   status.textContent='保存失败：'+err.message;
+   status.style.color='#c62828';
+ }finally{
+   button.disabled=false;
+   button.textContent=oldText;
+ }
 }
 
 function openSubCreate(){
