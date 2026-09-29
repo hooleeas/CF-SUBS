@@ -2420,103 +2420,94 @@ function closeUrlModal(){hideModal('urlModal')}
 function switchUrlMode(){
  const mode=document.getElementById('url-edit-mode').value;
  const input=document.getElementById('url-edit-value');
- if(editingUrlValue){
+ if(mode==='random'){
    input.disabled=true;
-   return;
+   input.value='';
+ }else{
+   input.disabled=false;
+   input.focus();
  }
- input.disabled=mode!=='custom';
- document.getElementById('urlModeNote').textContent=
-   mode==='random'
-   ? '随机 URL 使用类似 SURL 的 6 位随机后缀。创建后仍可编辑 URL。'
-   : '自定义 URL 只能使用字母、数字、下划线和短横线。';
 }
 
-function editUrl(token){
- const item=TOKENS.find(x=>x.url===token);
+function editUrl(url){
+ const item=TOKENS.find(x=>x.url===url);
  if(!item)return;
- editingUrlValue=token;
+ editingUrlValue=url;
  document.getElementById('urlModalTitle').textContent='编辑订阅链接';
  document.getElementById('url-edit-name').value=item.name||'';
  document.getElementById('url-edit-mode').value='custom';
- document.getElementById('url-edit-value').value=item.url||'';
+ document.getElementById('url-edit-value').value=item.url;
  document.getElementById('url-edit-value').disabled=false;
- document.getElementById('urlModeNote').textContent='URL 可以直接修改；保存后旧 URL 立即失效，新 URL 立即生效。';
- document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs(item.subs||[]);
+ document.getElementById('urlSaveStatus').textContent='';
  showModal('urlModal');
 }
 
 async function saveUrl(){
- const selected=[...document.querySelectorAll('#url-sub-list input[type=checkbox]:checked')].map(x=>x.value);
+ const button=document.activeElement;
+ const mode=document.getElementById('url-edit-mode').value;
+ const name=document.getElementById('url-edit-name').value.trim();
+ const urlValue=document.getElementById('url-edit-value').value.trim();
 
- if(!selected.length){
-   showToast('至少选择一个聚合节点');
-   return;
- }
+ const checkedSubs=[];
+ document.querySelectorAll('#url-sub-list input[type="checkbox"]:checked').forEach(el=>{
+   checkedSubs.push(el.value);
+ });
 
- const payload=editingUrlValue?{
-   type:'url_update',
-   oldUrl:editingUrlValue,
-   newUrl:document.getElementById('url-edit-value').value.trim(),
-   name:document.getElementById('url-edit-name').value.trim(),
-   subs:selected
- }:{
-   type:'url_create',
-   name:document.getElementById('url-edit-name').value.trim(),
-   mode:document.getElementById('url-edit-mode').value,
-   url:document.getElementById('url-edit-value').value.trim(),
-   subs:selected
+ const payload={
+   type:editingUrlValue?'url_update':'url_create',
+   name:name,
+   subs:checkedSubs
  };
 
- const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
- const text=await res.text();
+ if(editingUrlValue){
+   payload.oldUrl=editingUrlValue;
+   payload.newUrl=urlValue;
+ }else{
+   payload.mode=mode;
+   if(mode==='custom') payload.token=urlValue;
+ }
 
- if(!res.ok){showToast(text||'保存失败');return}
- location.reload();
+ button.disabled=true;
+ const oldText=button.textContent;
+ button.textContent='保存中...';
+
+ try{
+   const res=await fetch(window.location.pathname,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify(payload)
+   });
+   const text=await res.text();
+   if(!res.ok) throw new Error(text||'保存失败');
+   location.reload();
+ }catch(e){
+   const status=document.getElementById('urlSaveStatus');
+   status.textContent='保存失败: '+e.message;
+   status.style.color='#c62828';
+   button.disabled=false;
+   button.textContent=oldText;
+ }
 }
 
-async function deleteUrl(token){
- const item=TOKENS.find(x=>x.url===token);
+async function deleteUrl(url){
+ const item=TOKENS.find(x=>x.url===url);
  if(!item)return;
- if(!confirm('确定删除“'+item.name+'”吗？'))return;
+ if(!confirm('确定删除订阅链接“'+item.name+'”吗？'))return;
 
- const res=await fetch(window.location.pathname,{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({type:'url_delete',url:token})
- });
- const text=await res.text();
-
- if(!res.ok){showToast(text||'删除失败');return}
- location.reload();
+ try{
+   const res=await fetch(window.location.pathname,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({type:'url_delete',token:url})
+   });
+   const text=await res.text();
+   if(!res.ok) throw new Error(text||'删除失败');
+   location.reload();
+ }catch(e){
+   showToast(e.message);
+ }
 }
-
-switchFakeMode();
-
-// Defensive UI binding: keep every admin control clickable even if an inline
-// handler is blocked or an older handler throws. This does not replace the
-// existing handlers; it only provides a single delegated fallback.
-document.addEventListener('click', function(event) {
-    const btn = event.target.closest('button');
-    if (!btn || btn.disabled) return;
-    if (btn.closest('.modal-content') && event.defaultPrevented) return;
-
-    const text = (btn.textContent || '').trim();
-    try {
-        if (text === '🏠 主页') { event.preventDefault(); openFakeModal(); return; }
-        if (text === '🛡️ 安全') { event.preventDefault(); openSecurityModal(); return; }
-        if (text === '＋ 创建聚合节点') { event.preventDefault(); openSubCreate(); return; }
-        if (text === '＋ 创建订阅链接') { event.preventDefault(); openUrlCreate(); return; }
-
-        const setting = btn.getAttribute('data-setting');
-        if (setting) { event.preventDefault(); openSettingModal(setting); return; }
-
-        const action = btn.getAttribute('data-ui-action');
-        if (action === 'close-setting') { event.preventDefault(); closeSettingModal(); return; }
-    } catch (err) {
-        console.error('CF-SUBS UI fallback error:', err);
-    }
-}, true);
 </script>
 </body>
 </html>`;
