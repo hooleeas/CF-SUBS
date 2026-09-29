@@ -1300,7 +1300,7 @@ async function nginx(titleName) {
 <style>
     body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
 
-.setting-view{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}.setting-edit{margin-top:18px;padding-top:18px;border-top:1px solid var(--border,#e5e7eb)}
+.setting-view{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:nowrap}.setting-view>button{flex:0 0 auto}.setting-edit{margin-top:18px;padding-top:18px;border-top:1px solid var(--border,#e5e7eb)}
 </style>
 </head>
 <body>
@@ -2127,7 +2127,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
 <a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
 </div>
-<button type="button" class="secondary" onclick="toggleSettingEdit('subApi')">编辑</button>
+<button type="button" onclick="toggleSettingEdit('subApi')">编辑</button>
 </div>
 <div class="setting-edit hidden" id="setting-edit-subApi">
 <div class="field"><input id="setting-subApi" type="text" value="${escapeHTML(settings.subApi || '')}" placeholder="留空使用默认值"></div>
@@ -2143,7 +2143,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
 <a class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
 </div>
-<button type="button" class="secondary" onclick="toggleSettingEdit('subConfig')">编辑</button>
+<button type="button" onclick="toggleSettingEdit('subConfig')">编辑</button>
 </div>
 <div class="setting-edit hidden" id="setting-edit-subConfig">
 <div class="field"><textarea id="setting-subConfig" style="min-height:80px" placeholder="留空使用默认值">${escapeHTML(settings.subConfig || '')}</textarea></div>
@@ -2157,7 +2157,7 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <h2 class="section-title">节点屏蔽（NOADS）</h2>
 <div class="section-note" style="margin-top:8px;">${settings.noAds ? `已设置 ${settings.noAds.split(/[, \r\n]+/).filter(Boolean).length} 个屏蔽关键词` : '当前未设置屏蔽关键词'}</div>
 </div>
-<button type="button" class="secondary" onclick="toggleSettingEdit('noAds')">编辑</button>
+<button type="button" onclick="toggleSettingEdit('noAds')">编辑</button>
 </div>
 <div class="setting-edit hidden" id="setting-edit-noAds">
 <div class="field"><textarea id="setting-noAds" style="min-height:80px" placeholder="示例: 加入TG群, 订阅YouTube频道, https://t.me ......">${escapeHTML(settings.noAds || '')}</textarea><div class="section-note">使用英文逗号、空格或换行分隔</div></div>
