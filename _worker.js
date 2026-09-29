@@ -2240,8 +2240,8 @@ function renderSubList(){
     +'<div class="sub-count">'+count+' 个来源 · '+enabled+'</div>'
     +'</div>'
     +'<div class="actions" style="margin-top:0;">'
-    +'<button type="button" class="edit-button" onclick="editSub(\''+id+'\')">编辑</button>'
-    +'<button type="button" class="danger" onclick="deleteSub(\''+id+'\')">删除</button>'
+    +'<button type="button" class="edit-button" onclick="editSub(\\\''+id+'\\\')">编辑</button>'
+    +'<button type="button" class="danger" onclick="deleteSub(\\\''+id+'\\\')">删除</button>'
     +'</div>'
     +'</div>'
     +'<div class="source-box">'+sources+'</div>'
@@ -2276,9 +2276,9 @@ function renderUrlList(){
     +'<div class="sub-count">URL：'+path+'</div>'
     +'</div>'
     +'<div class="actions" style="margin-top:0;">'
-    +'<button type="button" class="secondary" onclick="copyValue(\''+safeUrl+'\')">复制</button>'
-    +'<button type="button" class="edit-button" onclick="editUrl(\''+path+'\')">编辑</button>'
-    +'<button type="button" class="danger" onclick="deleteUrl(\''+path+'\')">删除</button>'
+    +'<button type="button" class="secondary" onclick="copyValue(\\\''+safeUrl+'\\\')">复制</button>'
+    +'<button type="button" class="edit-button" onclick="editUrl(\\\''+path+'\\\')">编辑</button>'
+    +'<button type="button" class="danger" onclick="deleteUrl(\\\''+path+'\\\')">删除</button>'
     +'</div>'
     +'</div>'
     +'<a class="link-url token-url" href="'+safeUrl+'" target="_blank">'+safeUrl+'</a>'
@@ -2452,7 +2452,7 @@ async function saveSubs(){
 async function deleteSub(id){
  const item=SUBS.find(x=>x.id===id);
  if(!item)return;
- if(!confirm('确定删除“'+item.name+'”吗？\n已经绑定它的 URL 会自动解除绑定。'))return;
+ if(!confirm('确定删除“'+item.name+'”吗？\\n已经绑定它的 URL 会自动解除绑定。'))return;
 
  const res=await fetch(window.location.pathname,{
    method:'POST',
