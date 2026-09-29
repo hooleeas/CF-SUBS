@@ -1545,12 +1545,12 @@ function getToolStyles() {
         .link-url { display: block; width: 100%; word-wrap: break-word; overflow-wrap: break-word; word-break: break-all; white-space: normal; padding: 10px; border: 1px solid rgba(229, 229, 223, 0.8); border-radius: 8px; background: rgba(250, 250, 250, 0.7); color: #1f4b99; text-decoration: none; transition: all 0.3s ease; }
         .link-url:hover { background: rgba(31, 75, 153, 0.05); border-color: #1f4b99; }
         .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-        button { min-height: 36px; padding: 8px 16px; border: 1px solid #343a40; border-radius: 10px; background: #2f3338; color: #fff; font-size: 14px; cursor: pointer; font-weight: 600; transition: all 0.3s ease; }
-        button:hover { background: #1f2327; box-shadow: 0 4px 12px rgba(34, 34, 34, 0.15); }
+        button, .button { min-height: 36px; padding: 8px 16px; border: 1px solid #343a40; border-radius: 10px; background: #2f3338; color: #fff; font-size: 14px; cursor: pointer; font-weight: 600; transition: all 0.3s ease; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+        button:hover, .button:hover { background: #1f2327; box-shadow: 0 4px 12px rgba(34, 34, 34, 0.15); }
         button.secondary { background: #fff; color: #222; border-color: #c8c8c0; }
         button.secondary:hover { background: #f1f3f5; }
-        button.danger { background: #dc3545; border-color: #dc3545; }
-        button.danger:hover { background: #c82333; box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2); }
+        button.danger, .button.danger { background: #dc3545; border-color: #dc3545; }
+        button.danger:hover, .button.danger:hover { background: #c82333; box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2); }
         button:disabled { opacity: 0.65; cursor: default; }
         .field { margin-top: 12px; }
         label { display: block; margin-bottom: 6px; font-weight: 600; color: #1a1a1a; transition: color 0.3s; }
@@ -1580,8 +1580,8 @@ function getToolStyles() {
             .link-url:hover { background: rgba(100, 181, 246, 0.1); border-color: #64b5f6; }
             input, textarea, select { background: rgba(20, 20, 20, 0.8); color: #fff; border-color: rgba(255,255,255,0.2); }
             input:focus, textarea:focus, select:focus { background: #000; border-color: #3b82f6; }
-            button { background: #3f4650; color: #fff; border-color: #69717c; box-shadow: 0 2px 8px rgba(0,0,0,0.28); }
-            button:hover { background: #525b67; border-color: #858f9b; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+            button, .button { background: #3f4650; color: #fff; border-color: #69717c; box-shadow: 0 2px 8px rgba(0,0,0,0.28); }
+            button:hover, .button:hover { background: #525b67; border-color: #858f9b; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
             button.secondary { background: #3a414a; color: #fff; border-color: #69717c; }
             button.secondary:hover { background: #4b5561; border-color: #858f9b; }
             button.danger { background: #b8323f; color: #fff; border-color: #d24b58; }
@@ -2189,7 +2189,8 @@ function saveConfig(button,type){
        fakeMode:document.getElementById('fake-mode')?.value||'',
        fakeUrl:document.getElementById('fake-url')?.value||'',
        fakeUrl302:document.getElementById('fake-url302')?.value||'',
-       fakeCode:document.getElementById('fake-code')?.value||''
+       fakeCode:document.getElementById('fake-code')?.value||'',
+       adminPath:document.getElementById('sec-admin-path')?.value||'admin'
      }
    })
  }).then(async res=>{
@@ -2198,8 +2199,7 @@ function saveConfig(button,type){
    statusElem.textContent='已保存 '+new Date().toLocaleString();
    statusElem.style.color='#2e7d32';
    if(isSec && data.adminPath){
-     const newPath=String(data.adminPath).replace(/^[/]+/, '').replace(/[/]+$/, '');
-     setTimeout(()=>location.replace('/'),300);
+     setTimeout(()=>window.location.replace('/'),300);
    }else{
      setTimeout(()=>location.reload(),500);
    }
