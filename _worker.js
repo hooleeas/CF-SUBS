@@ -1300,7 +1300,7 @@ async function nginx(titleName) {
 <style>
     body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
 
-.setting-view{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:nowrap}.setting-view>button{flex:0 0 auto}.setting-edit{margin-top:18px;padding-top:18px;border-top:1px solid var(--border,#e5e7eb)}
+.setting-view{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:16px;width:100%}.setting-view>button{justify-self:end;align-self:start}.setting-edit{margin-top:18px;padding-top:18px;border-top:1px solid var(--border,#e5e7eb)}
 </style>
 </head>
 <body>
@@ -1567,6 +1567,9 @@ function getToolStyles() {
         .subtitle { margin-top: 8px; color: #666; font-size: 13px; }
         .panel { background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(229, 229, 223, 0.8); border-radius: 20px; padding: 16px; margin-top: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); transition: background 0.3s, border-color 0.3s; }
         .section-title { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
+        .setting-view { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px; width: 100%; }
+        .setting-view > button { justify-self: end; align-self: start; }
+        .setting-edit { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border, #e5e7eb); }
         .section-note { margin: 4px 0 10px; color: #888; font-size: 12px; }
         .link-list { display: grid; gap: 10px; }
         .link-item { border: 1px solid rgba(229, 229, 223, 0.6); border-radius: 12px; padding: 12px; background: rgba(255, 255, 255, 0.5); transition: background 0.3s, border-color 0.3s; }
