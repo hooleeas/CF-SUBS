@@ -15,6 +15,7 @@
  *   TOKEN:<token>
  *
  * Pages / Workers 环境变量仍兼容原 CF-SUB：
+ *   TOKEN
  *   USER
  *   PASS
  *   URL
@@ -27,6 +28,7 @@
  *   LINKSUB
  */
 
+let mytoken = 'auto';
 let guestToken = '';
 let FileName = 'CF-SUBS';
 let SUBUpdateTime = 6;
@@ -88,20 +90,21 @@ async function handleRequest(request, env) {
         const conversionSourceToken = url.searchParams.get('sourceToken') || '';
 
         // 每次请求重新从环境变量读取，保持 CF-SUB 原有变量行为
+        mytoken = env.TOKEN || mytoken;
         let adminUser = env.USER || '';
         let adminPass = env.PASS || '';
+        let adminPath = DEFAULT_ADMIN_PATH;
 
         fakeUrl = env.URL || '';
         fakeUrl302 = env.URL302 || '';
         fakeCode = env.CODE || '';
 
         // 读取 KV 配置
-        let kvConfig = {};
         if (env.KV) {
             try {
                 const kvConfigStr = await env.KV.get('CONFIG.json');
                 if (kvConfigStr) {
-                    kvConfig = JSON.parse(kvConfigStr);
+                    const kvConfig = JSON.parse(kvConfigStr);
 
                     FileName = kvConfig.subName || 'CF-SUBS';
 
@@ -113,6 +116,7 @@ async function handleRequest(request, env) {
                     guestToken = kvConfig.guest || guestToken;
                     adminUser = kvConfig.user || adminUser;
                     adminPass = kvConfig.pass || adminPass;
+                    adminPath = normalizeAdminPath(kvConfig.adminPath) || DEFAULT_ADMIN_PATH;
 
                     fakeMode = kvConfig.fakeMode !== undefined ? kvConfig.fakeMode : '';
                     fakeUrl = kvConfig.fakeUrl !== undefined ? kvConfig.fakeUrl : fakeUrl;
@@ -123,9 +127,6 @@ async function handleRequest(request, env) {
                 console.error('解析 KV 配置失败', e);
             }
         }
-
-        const adminPath = normalizeAdminPath(kvConfig?.adminPath || DEFAULT_ADMIN_PATH);
-        if (!adminPath) throw new Error('管理员后台路径配置无效');
 
         // 环境变量仍然支持旧 CF-SUB 的 GUEST / GUESTTOKEN
         guestToken = env.GUESTTOKEN || env.GUEST || guestToken;
@@ -153,9 +154,9 @@ async function handleRequest(request, env) {
         const currentDate = new Date();
         currentDate.setHours(0, 0, 0, 0);
         const timeTemp = Math.ceil(currentDate.getTime() / 1000);
-        const fakeToken = await MD5MD5(`${FileName}${timeTemp}`);
+        const fakeToken = await MD5MD5(`${mytoken}${timeTemp}`);
 
-        if (!guestToken) guestToken = await MD5MD5(FileName);
+        if (!guestToken) guestToken = await MD5MD5(mytoken);
 
         let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
         total = total * 1099511627776;
@@ -168,7 +169,7 @@ async function handleRequest(request, env) {
             'shadowrocket', 'subconverter'
         ].some(keyword => userAgent.includes(keyword));
 
-        // 退出登录：清除管理员会话并直接返回主页
+        // 退出登录：返回 204，不产生 logout 中间页面
         if (url.searchParams.has('logout') || url.pathname === `/${adminPath}/logout`) {
             return new Response(null, {
                 status: 204,
@@ -182,10 +183,10 @@ async function handleRequest(request, env) {
         // ==================== 管理后台 ====================
         if (url.pathname === `/${adminPath}`) {
             if (isAdminLoginEnabled(adminUser, adminPass)) {
-                const isLoggedIn = await isAdminLoggedIn(request, adminUser, adminPass);
+                const isLoggedIn = await isAdminLoggedIn(request, mytoken, adminUser, adminPass);
                 if (!isLoggedIn) {
                     if (request.method === 'POST') {
-                        return await handleAdminLogin(request, url, adminUser, adminPass);
+                        return await handleAdminLogin(request, url, mytoken, adminUser, adminPass);
                     }
                     return new Response(renderLoginPage(url), {
                         headers: {
@@ -203,7 +204,8 @@ async function handleRequest(request, env) {
                 effectiveSubConfig,
                 effectiveSubProtocol,
                 hasCustomApi,
-                hasCustomConfig
+                hasCustomConfig,
+                adminPath
             });
         }
 
@@ -229,6 +231,10 @@ async function handleRequest(request, env) {
             tokenData = await getToken(env, publicToken);
         }
 
+        const legacyAdminPath =
+            publicToken === mytoken ||
+            publicToken.toLowerCase() === String(mytoken).toLowerCase();
+
         const legacyGuestPath =
             !!guestToken &&
             publicToken.toLowerCase() === String(guestToken).toLowerCase();
@@ -239,7 +245,7 @@ async function handleRequest(request, env) {
 
         // 新 TOKEN 或旧 guest token / auto / fakeToken 都属于有效入口
         const validPublicEntry =
-            !!tokenData || legacyGuestPath || isFakeTokenRequest;
+            !!tokenData || legacyAdminPath || legacyGuestPath || isFakeTokenRequest;
 
         // ==================== 无效路径 / 主页 ====================
         if (!validPublicEntry && url.pathname !== '/') {
@@ -281,7 +287,7 @@ async function handleRequest(request, env) {
             selectedSources = await getSourcesForToken(env, tokenData);
         } else {
             // 兼容旧 CF-SUB：
-            // fake = 所有 SUBS；guest = legacy GUEST
+            // auto = 所有 SUBS；guest = legacy GUEST；fake = 所有 SUBS
             if (isFakeTokenRequest && conversionSourceToken) {
                 const sourceTokenData = await getToken(env, conversionSourceToken);
                 if (sourceTokenData) {
@@ -289,7 +295,7 @@ async function handleRequest(request, env) {
                 } else {
                     selectedSources = await getAllManagedSources(env);
                 }
-            } else if (isFakeTokenRequest) {
+            } else if (legacyAdminPath || isFakeTokenRequest) {
                 selectedSources = await getAllManagedSources(env);
             } else if (legacyGuestPath) {
                 // 如果旧 guest 没有 SUBS 绑定，则使用旧 LINK.txt / LINK 环境变量。
@@ -350,6 +356,33 @@ async function handleRequest(request, env) {
                 );
             }
 
+            // auto / mytoken：管理员后台仍支持旧入口，但新项目推荐 /admin
+            if (legacyAdminPath) {
+                if (isAdminLoginEnabled(adminUser, adminPass)) {
+                    const isLoggedIn = await isAdminLoggedIn(request, mytoken, adminUser, adminPass);
+                    if (!isLoggedIn) {
+                        if (request.method === 'POST') {
+                            return await handleAdminLogin(request, url, mytoken, adminUser, adminPass);
+                        }
+                        return new Response(renderLoginPage(url), {
+                            headers: {
+                                'Content-Type': 'text/html;charset=utf-8',
+                                'Cache-Control': 'no-store'
+                            }
+                        });
+                    }
+                }
+
+                return await handleAdmin(request, env, {
+                    adminUser,
+                    adminPass,
+                    effectiveSubConverter,
+                    effectiveSubConfig,
+                    effectiveSubProtocol,
+                    hasCustomApi,
+                    hasCustomConfig
+                });
+            }
         }
 
         // ==================== 原 CF-SUB 核心订阅处理 ====================
@@ -358,6 +391,7 @@ async function handleRequest(request, env) {
             env,
             selectedSources,
             {
+                mytoken,
                 fakeToken,
                 effectiveSubConverter,
                 effectiveSubConfig,
@@ -614,7 +648,7 @@ async function listTokens(env) {
 function normalizeAdminPath(value) {
     let path = String(value || '').trim();
     if (!path) return DEFAULT_ADMIN_PATH;
-    path = path.replace(/^\/+/, '').replace(/\/+$/, '');
+    path = path.replace(/^[/]+/, '').replace(/[/]+$/, '');
     if (!/^[A-Za-z0-9_-]{2,60}$/.test(path)) return '';
     return path;
 }
@@ -635,6 +669,7 @@ function validCustomToken(token) {
     const lower = token.toLowerCase();
     const reserved = new Set([
         'admin', 'api', 'login', 'logout', 'favicon.ico', 'auto',
+        String(mytoken || '').toLowerCase(),
         String(guestToken || '').toLowerCase()
     ]);
 
@@ -747,30 +782,20 @@ async function handleAdmin(request, env, runtime) {
 
             if (data.type === 'config') {
                 const old = await getConfig(env);
-                const requestedAdminPath = normalizeAdminPath(data.settings?.adminPath || old.adminPath || DEFAULT_ADMIN_PATH);
-                if (!requestedAdminPath) return new Response('管理后台路径无效', { status: 400 });
-                if (requestedAdminPath !== normalizeAdminPath(old.adminPath || DEFAULT_ADMIN_PATH)) {
-                    const reservedPath = ['api','login','logout','favicon.ico'];
-                    if (reservedPath.includes(requestedAdminPath.toLowerCase())) {
-                        return new Response('该管理后台路径不可使用', { status: 400 });
-                    }
-                    const tokenConflict = await getToken(env, requestedAdminPath);
-                    if (tokenConflict) return new Response('该路径已被访客 TOKEN 占用，请换一个路径', { status: 409 });
-                }
 
                 const next = {
                     subName: normalizeName(data.settings?.subName) || 'CF-SUBS',
-                    adminPath: requestedAdminPath,
                     subApi: String(data.settings?.subApi || '').trim(),
                     subConfig: String(data.settings?.subConfig || '').trim(),
                     noAds: String(data.settings?.noAds || '').trim(),
 
-                    // 保留兼容配置
+                    // 保留旧配置
                     guest: String(data.settings?.guest || old.guest || ''),
                     user: String(data.settings?.user || old.user || ''),
                     pass: data.settings?.pass
                         ? String(data.settings.pass)
                         : String(old.pass || ''),
+                    adminPath: normalizeAdminPath(data.settings?.adminPath || old.adminPath) || DEFAULT_ADMIN_PATH,
 
                     fakeMode: String(data.settings?.fakeMode ?? old.fakeMode ?? ''),
                     fakeUrl: String(data.settings?.fakeUrl ?? old.fakeUrl ?? ''),
@@ -779,7 +804,7 @@ async function handleAdmin(request, env, runtime) {
                 };
 
                 await env.KV.put('CONFIG.json', JSON.stringify(next));
-                return jsonResponse({ ok: true, adminPath: requestedAdminPath });
+                return jsonResponse({ ok: true, adminPath: next.adminPath });
             }
 
             if (data.type === 'sub_create') {
@@ -970,13 +995,13 @@ async function handleAdmin(request, env, runtime) {
 async function getConfig(env) {
     const defaults = {
         subName: 'CF-SUBS',
-        adminPath: DEFAULT_ADMIN_PATH,
         subApi: '',
         subConfig: '',
         noAds: '',
         guest: '',
         user: '',
         pass: '',
+        adminPath: DEFAULT_ADMIN_PATH,
         fakeMode: '',
         fakeUrl: '',
         fakeUrl302: '',
@@ -1501,15 +1526,15 @@ function escapeHTML(text = '') {
     return String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
-async function getAdminSessionValue(user, pass) {
+async function getAdminSessionValue(user, pass, token) {
     if (!user || !pass) return '';
-    return await MD5MD5(`${user}:${pass}:admin-login`);
+    return await MD5MD5(`${user}:${pass}:${token}:admin-login`);
 }
 
 function isAdminLoginEnabled(user, pass) { return !!(user && pass); }
 
-async function isAdminLoggedIn(request, user, pass) {
-    const session = await getAdminSessionValue(user, pass);
+async function isAdminLoggedIn(request, token, user, pass) {
+    const session = await getAdminSessionValue(user, pass, token);
     return session ? getCookie(request, 'CF_SUB_ADMIN') === session : false;
 }
 
@@ -1518,7 +1543,7 @@ function buildAdminCookie(value, url) {
     return `CF_SUB_ADMIN=${encodeURIComponent(value)}; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax${secure}`;
 }
 
-async function handleAdminLogin(request, url, user, pass) {
+async function handleAdminLogin(request, url, token, user, pass) {
     let inputUser = '';
     let inputPass = '';
     try {
@@ -1529,7 +1554,7 @@ async function handleAdminLogin(request, url, user, pass) {
         return new Response(renderLoginPage(url, '登录请求格式不正确'), { status: 400, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
     }
     if (inputUser === user && inputPass === pass) {
-        const session = await getAdminSessionValue(user, pass);
+        const session = await getAdminSessionValue(user, pass, token);
         return new Response('', { status: 302, headers: { 'Location': url.pathname, 'Set-Cookie': buildAdminCookie(session, url), 'Cache-Control': 'no-store' } });
     }
     return new Response(renderLoginPage(url, '用户名或密码错误'), { status: 401, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
@@ -1704,6 +1729,7 @@ function renderToolScripts(includeEditor = false) {
                         guest: document.getElementById('sec-guest') ? document.getElementById('sec-guest').value : '',
                         user: document.getElementById('sec-user') ? document.getElementById('sec-user').value : '',
                         pass: secPass,
+                        adminPath: document.getElementById('sec-admin-path') ? document.getElementById('sec-admin-path').value : 'admin',
                         subName: document.getElementById('config-subname') ? document.getElementById('config-subname').value : '',
                         subApi: document.getElementById('config-subapi') ? document.getElementById('config-subapi').value : '',
                         subConfig: document.getElementById('config-subconfig') ? document.getElementById('config-subconfig').value : '',
@@ -1711,27 +1737,17 @@ function renderToolScripts(includeEditor = false) {
                         fakeMode: document.getElementById('fake-mode') ? document.getElementById('fake-mode').value : '',
                         fakeUrl: document.getElementById('fake-url') ? document.getElementById('fake-url').value : '',
                         fakeUrl302: document.getElementById('fake-url302') ? document.getElementById('fake-url302').value : '',
-                        fakeCode: document.getElementById('fake-code') ? document.getElementById('fake-code').value : '',
-                        adminPath: document.getElementById('sec-admin-path') ? document.getElementById('sec-admin-path').value : DEFAULT_ADMIN_PATH
+                        fakeCode: document.getElementById('fake-code') ? document.getElementById('fake-code').value : ''
                     }
                 }),
                 headers: { 'Content-Type': 'application/json' }
             }).then(function (res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
-            }).then(async function (res) {
-                const body = await res.text();
-                if (!res.ok) throw new Error(body || ('HTTP ' + res.status));
-                let data = {};
-                try { data = JSON.parse(body); } catch (e) {}
+            }).then(function () {
                 statusElem.textContent = '已保存 ' + new Date().toLocaleString();
                 statusElem.style.color = 'var(--coral, #2e7d32)';
-                if (isSec && data.adminPath) {
-                    const newPath = String(data.adminPath).replace(/^\/+/, '').replace(/\/+$/, '');
-                    setTimeout(() => window.location.replace('/' + newPath), 300);
-                } else {
-                    setTimeout(() => window.location.reload(), 500);
-                }
+                setTimeout(() => window.location.reload(), 500);
             }).catch(function (err) {
                 statusElem.textContent = '保存失败: 网络异常或超时';
                 statusElem.style.color = '#c62828';
@@ -1970,10 +1986,10 @@ ${getToolStyles()}
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🛡️ 账户与安全设置</h2>
 <div class="field"><label>旧版访客入口 (GUEST)</label><input id="sec-guest" type="text" value="${escapeHTML(settings.guest || '')}" placeholder="仅用于兼容旧 CF-SUB；新项目请使用访客 TOKEN"></div>
-<div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(settings.adminPath || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage"><div class="section-note">修改后后台入口会立即切换，只填写路径单词，例如 admin 或 manage，不需要填写 /。</div></div>
 <div class="field"><label>后台登录账号 (USER)</label><input id="sec-user" type="text" value="${escapeHTML(settings.user || '')}" placeholder="例如：admin"></div>
 <div class="field"><label>后台登录密码 (PASS)</label><input id="sec-pass" type="password" value="" placeholder="留空则不修改当前密码"></div>
 <div class="field"><label>确认登录密码</label><input id="sec-pass2" type="password" value="" placeholder="留空则不修改当前密码"></div>
+<div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage"><div class="section-note">只填写路径单词，不需要填写 /。修改后保存会立即切换到新后台地址。</div></div>
 <div class="actions" style="margin-top:24px;justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSecurityModal()">取消</button>
 <button type="button" onclick="saveConfig(this,'sec')">保存修改</button>
@@ -2025,7 +2041,7 @@ ${getToolStyles()}
 <div style="display:flex;gap:8px;flex-wrap:wrap;">
 <button type="button" onclick="openFakeModal()">🏠 主页</button>
 <button type="button" onclick="openSecurityModal()">🛡️ 安全</button>
-<button type="button" class="danger" onclick="logoutAdmin()">🚪 退出</button>
+<a class="button danger" href="/${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}/logout">🚪 退出</a>
 </div>
 </header>
 
@@ -2133,13 +2149,13 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 </div>
 </section>
 
+
 <div id="current-qrcode"></div>
 </main>
 
 <script>
 const SUBS = ${JSON.stringify(subs)};
 const TOKENS = ${JSON.stringify(tokens)};
-const ADMIN_PATH = ${JSON.stringify(settings.adminPath || DEFAULT_ADMIN_PATH)};
 let editingSub = '';
 let editingTokenValue = '';
 
@@ -2168,13 +2184,6 @@ function switchFakeMode(){
  if(mode==='3')document.getElementById('fake-group-code').classList.remove('hidden');
 }
 
-async function logoutAdmin(){
-  try{
-    await fetch('/'+ADMIN_PATH+'/logout',{method:'GET',credentials:'same-origin',cache:'no-store'});
-  }catch(e){}
-  location.replace('/');
-}
-
 function saveConfig(button,type){
  const isSec=type==='sec';
  const isFake=type==='fake';
@@ -2192,7 +2201,7 @@ function saveConfig(button,type){
  const oldText=button.textContent;
  button.textContent='保存中...';
 
- fetch(ADMIN_PATH,{
+ fetch(window.location.pathname,{
    method:'POST',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({
@@ -2208,19 +2217,16 @@ function saveConfig(button,type){
        fakeMode:document.getElementById('fake-mode')?.value||'',
        fakeUrl:document.getElementById('fake-url')?.value||'',
        fakeUrl302:document.getElementById('fake-url302')?.value||'',
-       fakeCode:document.getElementById('fake-code')?.value||'',
-       adminPath:document.getElementById('sec-admin-path')?.value||DEFAULT_ADMIN_PATH
+       fakeCode:document.getElementById('fake-code')?.value||''
      }
    })
  }).then(async res=>{
-   const body=await res.text();
-   if(!res.ok)throw new Error(body || ('HTTP '+res.status));
-   let data={};
-   try{ data=JSON.parse(body); }catch(e){}
+   if(!res.ok)throw new Error(await res.text());
+   const data=await res.json().catch(()=>({}));
    statusElem.textContent='已保存 '+new Date().toLocaleString();
    statusElem.style.color='#2e7d32';
    if(isSec && data.adminPath){
-     const newPath=String(data.adminPath).replace(/^\/+/, '').replace(/\/+$/, '');
+     const newPath=String(data.adminPath).replace(/^[/]+/, '').replace(/[/]+$/, '');
      setTimeout(()=>location.replace('/'+newPath),300);
    }else{
      setTimeout(()=>location.reload(),500);
@@ -2259,7 +2265,7 @@ function editSub(id){
 }
 
 async function saveSubs(){
- const button=event?.target;
+ const button=document.activeElement;
  const payload={
    type:editingSub?'sub_update':'sub_create',
    id:editingSub,
@@ -2268,7 +2274,7 @@ async function saveSubs(){
    enabled:document.getElementById('sub-edit-enabled').checked
  };
 
- const res=await fetch(ADMIN_PATH,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  const text=await res.text();
 
  if(!res.ok){showToast(text||'保存失败');return}
@@ -2280,7 +2286,7 @@ async function deleteSub(id){
  if(!item)return;
  if(!confirm('确定删除“'+item.name+'”吗？\\n已经绑定它的 TOKEN 会自动解除绑定。'))return;
 
- const res=await fetch(ADMIN_PATH,{
+ const res=await fetch(window.location.pathname,{
    method:'POST',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({type:'sub_delete',id})
@@ -2373,7 +2379,7 @@ async function saveToken(){
    subs:selected
  };
 
- const res=await fetch(ADMIN_PATH,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  const text=await res.text();
 
  if(!res.ok){showToast(text||'保存失败');return}
@@ -2385,7 +2391,7 @@ async function deleteToken(token){
  if(!item)return;
  if(!confirm('确定删除“'+item.name+'”吗？'))return;
 
- const res=await fetch(ADMIN_PATH,{
+ const res=await fetch(window.location.pathname,{
    method:'POST',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({type:'token_delete',token})
