@@ -838,7 +838,11 @@ async function handleAdmin(request, env, runtime) {
                     return env.KV.put(`${URL_PREFIX}${item.url}`, JSON.stringify(item));
                 }));
 
-                return jsonResponse({ ok: true });
+                return jsonResponse({
+                    ok: true,
+                    deletedId: id,
+                    affectedUrls: affected
+                });
             }
 
             if (data.type === 'url_create') {
@@ -863,10 +867,10 @@ async function handleAdmin(request, env, runtime) {
                     token = await makeRandomToken(env, 6);
                 }
 
-                const validSubs = [];
-                for (const id of selected) {
-                    if (await getSub(env, id)) validSubs.push(id);
-                }
+                const checkedSubs = await Promise.all(selected.map(async id => {
+                    return (await getSub(env, id)) ? id : null;
+                }));
+                const validSubs = checkedSubs.filter(Boolean);
 
                 if (!validSubs.length) {
                     return new Response('至少选择一个聚合节点', { status: 400 });
@@ -905,10 +909,10 @@ async function handleAdmin(request, env, runtime) {
                     return new Response('新的 URL 已存在，请使用其他 URL', { status: 409 });
                 }
 
-                const validSubs = [];
-                for (const id of selected) {
-                    if (await getSub(env, id)) validSubs.push(id);
-                }
+                const checkedSubs = await Promise.all(selected.map(async id => {
+                    return (await getSub(env, id)) ? id : null;
+                }));
+                const validSubs = checkedSubs.filter(Boolean);
 
                 if (!validSubs.length) return new Response('至少选择一个聚合节点', { status: 400 });
 
@@ -1727,18 +1731,16 @@ function renderToolScripts(includeEditor = false) {
             }).then(function (res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
-            }).then(function (res) {
-                return res.text().then(function (text) {
-                    let data = {};
-                    try { data = JSON.parse(text); } catch (e) {}
-                    statusElem.textContent = '已保存 ' + new Date().toLocaleString();
-                    statusElem.style.color = 'var(--coral, #2e7d32)';
-                    if (isSec && data.adminPath) {
-                        setTimeout(() => window.location.replace('/'), 300);
-                    } else {
-                        setTimeout(() => window.location.reload(), 500);
-                    }
-                });
+            }).then(function (text) {
+                let data = {};
+                try { data = JSON.parse(text); } catch (e) {}
+                statusElem.textContent = '已保存 ' + new Date().toLocaleString();
+                statusElem.style.color = 'var(--coral, #2e7d32)';
+                if (isSec && data.adminPath) {
+                    setTimeout(() => window.location.replace('/'), 300);
+                } else {
+                    setTimeout(() => window.location.reload(), 500);
+                }
             }).catch(function (err) {
                 statusElem.textContent = '保存失败: 网络异常或超时';
                 statusElem.style.color = '#c62828';
@@ -2117,13 +2119,13 @@ ${getToolStyles()}
 <button type="button" onclick="openSubCreate()">＋ 创建聚合节点</button>
 </div>
 
-<div class="sub-grid" style="margin-top:12px;">
+<div id="subs-grid" class="sub-grid" style="margin-top:12px;">
 ${subs.length ? subs.map(s => `
 <div class="sub-row">
 <div class="sub-head">
 <div>
 <div class="sub-name">${escapeHTML(s.name)}</div>
-<div class="sub-count">${s.sources?.length || 0} 个来源 · ${s.enabled === false ? '已禁用' : '已启用'}</div>
+<div class="sub-count">${s.sources?.length || 0} 个来源 · ${s.pending ? '保存中' : (s.enabled === false ? '已禁用' : '已启用')}</div>
 </div>
 <div class="actions" style="margin-top:0;">
 <button type="button" class="edit-button" onclick="editSub('${escapeHTML(s.id)}')">编辑</button>
@@ -2145,7 +2147,7 @@ ${subs.length ? subs.map(s => `
 <button type="button" onclick="openUrlCreate()">＋ 创建订阅链接</button>
 </div>
 
-<div class="sub-grid" style="margin-top:12px;">
+<div id="urls-grid" class="sub-grid" style="margin-top:12px;">
 ${tokens.length ? tokens.map(t => {
     const tokenUrl = `${origin}/${encodeURIComponent(t.url)}`;
     const subNames = (t.subs || []).map(id => {
@@ -2214,8 +2216,8 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 </main>
 
 <script>
-const SUBS = ${JSON.stringify(subs)};
-const TOKENS = ${JSON.stringify(tokens)};
+let SUBS = ${JSON.stringify(subs)};
+let TOKENS = ${JSON.stringify(tokens)};
 let editingSub = '';
 let editingUrlValue = '';
 
@@ -2334,67 +2336,170 @@ function editSub(id){
  document.getElementById('subsModal').style.display='flex';
 }
 
+function renderSubsGrid(){
+ const box=document.getElementById('subs-grid');
+ if(!box)return;
+ if(!SUBS.length){
+   box.innerHTML='<div class="empty">暂无聚合节点。SUB 默认就是空的，请点击“创建聚合节点”。</div>';
+   return;
+ }
+ const sorted=[...SUBS].sort((a,b)=>String(a.name).localeCompare(String(b.name),'zh-CN'));
+ box.innerHTML=sorted.map(s=>`
+<div class="sub-row">
+<div class="sub-head">
+<div>
+<div class="sub-name">${escapeJS(s.name)}</div>
+<div class="sub-count">${(s.sources||[]).length} 个来源 · ${s.pending ? '保存中' : (s.enabled === false ? '已禁用' : '已启用')}</div>
+</div>
+<div class="actions" style="margin-top:0;">
+<button type="button" class="edit-button" onclick="editSub('${escapeJS(s.id)}')">编辑</button>
+<button type="button" class="danger" onclick="deleteSub('${escapeJS(s.id)}')">删除</button>
+</div>
+</div>
+<div class="source-box">${escapeJS((s.sources||[]).join('\n'))}</div>
+</div>`).join('');
+}
+
+function renderUrlsGrid(){
+ const box=document.getElementById('urls-grid');
+ if(!box)return;
+ if(!TOKENS.length){
+   box.innerHTML='<div class="empty">暂无订阅链接。创建订阅链接后才会产生公开订阅地址。</div>';
+   return;
+ }
+ box.innerHTML=[...TOKENS].sort((a,b)=>String(a.name).localeCompare(String(b.name),'zh-CN')).map(t=>{
+   const tokenUrl=`${window.location.origin}/${encodeURIComponent(t.url)}`;
+   const subNames=(t.subs||[]).map(id=>{
+     const sub=SUBS.find(x=>x.id===id);
+     return sub ? sub.name : '已删除';
+   });
+   return `
+<div class="sub-row">
+<div class="sub-head">
+<div style="min-width:0;">
+<div class="sub-name">${escapeJS(t.name)}</div>
+<div class="sub-count">URL：${escapeJS(t.url)}</div>
+</div>
+<div class="actions" style="margin-top:0;">
+<button type="button" class="secondary" onclick="copyValue('${escapeJS(tokenUrl)}')">复制</button>
+<button type="button" class="edit-button" onclick="editUrl('${escapeJS(t.url)}')">编辑</button>
+<button type="button" class="danger" onclick="deleteUrl('${escapeJS(t.url)}')">删除</button>
+</div>
+</div>
+<a class="link-url token-url" href="${escapeJS(tokenUrl)}" target="_blank">${escapeJS(tokenUrl)}</a>
+<div style="margin-top:8px;">
+${subNames.length ? subNames.map(x=>`<span class="chip">${escapeJS(x)}</span>`).join('') : '<span class="small-note">未绑定聚合节点</span>'}
+</div>
+</div>`;
+ }).join('');
+}
+
 async function saveSubs(){
  const button=document.querySelector('#subsModal button:not(.secondary)');
  const status=document.getElementById('subSaveStatus');
- const payload={
-   type:editingSub?'sub_update':'sub_create',
-   id:editingSub,
-   name:document.getElementById('sub-edit-name').value.trim(),
-   sources:document.getElementById('sub-edit-sources').value,
-   enabled:document.getElementById('sub-edit-enabled').checked
- };
+ const wasEditing=!!editingSub;
+ const oldId=editingSub;
+ const name=document.getElementById('sub-edit-name').value.trim();
+ const sources=document.getElementById('sub-edit-sources').value;
+ const enabled=document.getElementById('sub-edit-enabled').checked;
+ const sourceList=sources.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const tempId=wasEditing ? oldId : `local-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+ const optimistic={id:tempId,name,sources:sourceList,enabled,pending:!wasEditing,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+ const previous=wasEditing ? SUBS.find(x=>x.id===oldId) : null;
+
+ if(wasEditing){
+   const index=SUBS.findIndex(x=>x.id===oldId);
+   if(index>=0) SUBS[index]={...SUBS[index],...optimistic,id:oldId};
+ }else SUBS.push(optimistic);
+ renderSubsGrid();
+ renderUrlsGrid();
+ closeSubsModal();
+ showToast(wasEditing?'聚合节点更新中...':'聚合节点创建中...');
 
  button.disabled=true;
  button.textContent='保存中...';
  status.textContent='正在保存...';
- const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
- const text=await res.text();
-
- if(!res.ok){
+ const payload={type:wasEditing?'sub_update':'sub_create',id:wasEditing?oldId:undefined,name,sources,enabled};
+ try{
+   const res=await fetch(window.location.pathname,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},body:JSON.stringify(payload)});
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'保存失败');
+   const data=JSON.parse(text);
+   if(!data.sub)throw new Error('服务器未返回聚合节点数据');
+   if(wasEditing){
+     const index=SUBS.findIndex(x=>x.id===oldId);
+     if(index>=0)SUBS[index]={...data.sub,pending:false}; else SUBS.push({...data.sub,pending:false});
+   }else{
+     SUBS=SUBS.filter(x=>x.id!==tempId);
+     SUBS.push({...data.sub,pending:false});
+   }
+   renderSubsGrid();
+   renderUrlsGrid();
+   status.textContent='保存成功';
+   showToast(wasEditing?'聚合节点已更新':'聚合节点已创建');
+ }catch(err){
+   if(wasEditing){
+     const index=SUBS.findIndex(x=>x.id===oldId);
+     if(previous){if(index>=0)SUBS[index]=previous;else SUBS.push(previous);}
+   }else SUBS=SUBS.filter(x=>x.id!==tempId);
+   renderSubsGrid();
+   renderUrlsGrid();
+   status.textContent=err.message||'保存失败';
+   showToast(err.message||'保存失败');
+   document.getElementById('subsModal').style.display='flex';
+ }finally{
    button.disabled=false;
    button.textContent='保存';
-   status.textContent=text||'保存失败';
-   showToast(text||'保存失败');
-   return;
  }
- status.textContent='保存成功，正在刷新...';
- closeSubsModal();
- location.reload();
 }
-
 async function deleteSub(id){
  const item=SUBS.find(x=>x.id===id);
  if(!item)return;
- if(!confirm('确定删除“'+item.name+'”吗？\\n已经绑定它的 URL 会自动解除绑定。'))return;
-
- const res=await fetch(window.location.pathname,{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({type:'sub_delete',id})
- });
- const text=await res.text();
-
- if(!res.ok){showToast(text||'删除失败');return}
- location.reload();
+ if(!confirm('确定删除“'+item.name+'”吗？\n已经绑定它的 URL 会自动解除绑定。'))return;
+ const previousSubs=[...SUBS];
+ const previousTokens=TOKENS.map(x=>({...x,subs:Array.isArray(x.subs)?[...x.subs]:x.subs}));
+ SUBS=SUBS.filter(x=>x.id!==id);
+ TOKENS=TOKENS.map(x=>Array.isArray(x.subs)?{...x,subs:x.subs.filter(subId=>subId!==id)}:x);
+ renderSubsGrid();
+ renderUrlsGrid();
+ showToast('聚合节点删除中...');
+ try{
+   const res=await fetch(window.location.pathname,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},body:JSON.stringify({type:'sub_delete',id})});
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'删除失败');
+   const data=JSON.parse(text);
+   if(!data.ok)throw new Error('删除失败');
+   showToast('聚合节点已删除');
+ }catch(err){
+   SUBS=previousSubs;
+   TOKENS=previousTokens;
+   renderSubsGrid();
+   renderUrlsGrid();
+   showToast(err.message||'删除失败');
+ }
 }
-
 function renderUrlSubs(selected){
  const box=document.getElementById('url-sub-list');
  if(!SUBS.length){
    box.innerHTML='<div class="small-note">暂无 SUB，请先创建聚合节点。</div>';
    return;
  }
- box.innerHTML=SUBS.map(s=>\`
-   <label class="check-item">
-     <input type="checkbox" value="\${escapeJS(s.id)}" \${selected.includes(s.id)?'checked':''}>
-     <span>\${escapeJS(s.name)}</span>
+ box.innerHTML=SUBS.map(s=>`
+   <label class="check-item" style="${s.pending?'opacity:.55;':''}">
+     <input type="checkbox" value="${escapeJS(s.id)}" ${selected.includes(s.id)?'checked':''} ${s.pending?'disabled':''}>
+     <span>${escapeJS(s.name)}${s.pending?'（保存中）':''}</span>
    </label>
- \`).join('');
+ `).join('');
 }
-
 function escapeJS(value){
  return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function makeClientRandomToken(length=6){
+ const chars='ABCDEFGHJKMNPQRSTWXYZabcdefghijkmnpqrstwxyz2345678';
+ let out='';
+ for(let i=0;i<length;i++) out+=chars[Math.floor(Math.random()*chars.length)];
+ return out;
 }
 
 function openUrlCreate(){
@@ -2429,60 +2534,67 @@ async function saveUrl(){
  const selected=[...document.querySelectorAll('#url-sub-list input[type=checkbox]:checked')].map(x=>x.value);
  const button=document.querySelector('#urlModal button:not(.secondary)');
  const status=document.getElementById('urlSaveStatus');
-
- if(!selected.length){
-   showToast('至少选择一个聚合节点');
-   return;
- }
-
- const payload=editingUrlValue?{
-   type:'url_update',
-   oldUrl:editingUrlValue,
-   newUrl:document.getElementById('url-edit-value').value.trim(),
-   name:document.getElementById('url-edit-name').value.trim(),
-   subs:selected
- }:{
-   type:'url_create',
-   name:document.getElementById('url-edit-name').value.trim(),
-   mode:document.getElementById('url-edit-value').value.trim() ? 'custom' : 'random',
-   url:document.getElementById('url-edit-value').value.trim(),
-   subs:selected
- };
-
+ const wasEditing=!!editingUrlValue;
+ const oldToken=editingUrlValue;
+ if(!selected.length){showToast('至少选择一个聚合节点');return;}
+ const name=document.getElementById('url-edit-name').value.trim();
+ let newToken=document.getElementById('url-edit-value').value.trim();
+ if(!wasEditing && !newToken)newToken=makeClientRandomToken(6);
+ const previous=wasEditing ? TOKENS.find(x=>x.url===oldToken) : null;
+ const optimistic={url:newToken,name,subs:[...selected],createdAt:previous?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+ if(wasEditing){TOKENS=TOKENS.filter(x=>x.url!==oldToken);TOKENS.push({...previous,...optimistic});}
+ else TOKENS.push(optimistic);
+ renderUrlsGrid();
+ closeUrlModal();
+ showToast(wasEditing?'订阅链接更新中...':'订阅链接创建中...');
  button.disabled=true;
  button.textContent='保存中...';
  status.textContent='正在保存...';
- const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
- const text=await res.text();
-
- if(!res.ok){
+ const payload=wasEditing?{type:'url_update',oldUrl:oldToken,newUrl:newToken,name,subs:selected}:{type:'url_create',name,mode:'custom',url:newToken,subs:selected};
+ try{
+   const res=await fetch(window.location.pathname,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},body:JSON.stringify(payload)});
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'保存失败');
+   const data=JSON.parse(text);
+   if(!data.url)throw new Error('服务器未返回订阅链接数据');
+   TOKENS=TOKENS.filter(x=>x.url!==newToken);
+   TOKENS.push(data.url);
+   renderUrlsGrid();
+   status.textContent='保存成功';
+   showToast(wasEditing?'订阅链接已更新':'订阅链接已创建');
+   editingUrlValue='';
+ }catch(err){
+   TOKENS=TOKENS.filter(x=>x.url!==newToken);
+   if(previous)TOKENS.push(previous);
+   renderUrlsGrid();
+   status.textContent=err.message||'保存失败';
+   showToast(err.message||'保存失败');
+   document.getElementById('urlModal').style.display='flex';
+ }finally{
    button.disabled=false;
    button.textContent='保存';
-   status.textContent=text||'保存失败';
-   showToast(text||'保存失败');
-   return;
  }
- status.textContent='保存成功，正在刷新...';
- closeUrlModal();
- location.reload();
 }
-
 async function deleteUrl(token){
  const item=TOKENS.find(x=>x.url===token);
  if(!item)return;
  if(!confirm('确定删除“'+item.name+'”吗？'))return;
-
- const res=await fetch(window.location.pathname,{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({type:'url_delete',url:token})
- });
- const text=await res.text();
-
- if(!res.ok){showToast(text||'删除失败');return}
- location.reload();
+ TOKENS=TOKENS.filter(x=>x.url!==token);
+ renderUrlsGrid();
+ showToast('订阅链接删除中...');
+ try{
+   const res=await fetch(window.location.pathname,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},body:JSON.stringify({type:'url_delete',url:token})});
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'删除失败');
+   const data=JSON.parse(text);
+   if(!data.ok)throw new Error('删除失败');
+   showToast('订阅链接已删除');
+ }catch(err){
+   TOKENS.push(item);
+   renderUrlsGrid();
+   showToast(err.message||'删除失败');
+ }
 }
-
 switchFakeMode();
 </script>
 </body>
