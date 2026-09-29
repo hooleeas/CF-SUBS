@@ -15,7 +15,6 @@
  *   TOKEN:<token>
  *
  * Pages / Workers 环境变量仍兼容原 CF-SUB：
- *   TOKEN
  *   USER
  *   PASS
  *   URL
@@ -28,7 +27,6 @@
  *   LINKSUB
  */
 
-let mytoken = 'auto';
 let guestToken = '';
 let FileName = 'CF-SUBS';
 let SUBUpdateTime = 6;
@@ -89,7 +87,6 @@ async function handleRequest(request, env) {
         const conversionSourceToken = url.searchParams.get('sourceToken') || '';
 
         // 每次请求重新从环境变量读取，保持 CF-SUB 原有变量行为
-        mytoken = env.TOKEN || mytoken;
         let adminUser = env.USER || '';
         let adminPass = env.PASS || '';
 
@@ -151,9 +148,9 @@ async function handleRequest(request, env) {
         const currentDate = new Date();
         currentDate.setHours(0, 0, 0, 0);
         const timeTemp = Math.ceil(currentDate.getTime() / 1000);
-        const fakeToken = await MD5MD5(`${mytoken}${timeTemp}`);
+        const fakeToken = await MD5MD5(`${FileName}${timeTemp}`);
 
-        if (!guestToken) guestToken = await MD5MD5(mytoken);
+        if (!guestToken) guestToken = await MD5MD5(FileName);
 
         let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
         total = total * 1099511627776;
@@ -180,10 +177,10 @@ async function handleRequest(request, env) {
         // ==================== 管理后台 ====================
         if (url.pathname === '/admin') {
             if (isAdminLoginEnabled(adminUser, adminPass)) {
-                const isLoggedIn = await isAdminLoggedIn(request, mytoken, adminUser, adminPass);
+                const isLoggedIn = await isAdminLoggedIn(request, adminUser, adminPass);
                 if (!isLoggedIn) {
                     if (request.method === 'POST') {
-                        return await handleAdminLogin(request, url, mytoken, adminUser, adminPass);
+                        return await handleAdminLogin(request, url, adminUser, adminPass);
                     }
                     return new Response(renderLoginPage(url), {
                         headers: {
@@ -227,10 +224,6 @@ async function handleRequest(request, env) {
             tokenData = await getToken(env, publicToken);
         }
 
-        const legacyAdminPath =
-            publicToken === mytoken ||
-            publicToken.toLowerCase() === String(mytoken).toLowerCase();
-
         const legacyGuestPath =
             !!guestToken &&
             publicToken.toLowerCase() === String(guestToken).toLowerCase();
@@ -241,7 +234,7 @@ async function handleRequest(request, env) {
 
         // 新 TOKEN 或旧 guest token / auto / fakeToken 都属于有效入口
         const validPublicEntry =
-            !!tokenData || legacyAdminPath || legacyGuestPath || isFakeTokenRequest;
+            !!tokenData || legacyGuestPath || isFakeTokenRequest;
 
         // ==================== 无效路径 / 主页 ====================
         if (!validPublicEntry && url.pathname !== '/') {
@@ -283,7 +276,7 @@ async function handleRequest(request, env) {
             selectedSources = await getSourcesForToken(env, tokenData);
         } else {
             // 兼容旧 CF-SUB：
-            // auto = 所有 SUBS；guest = legacy GUEST；fake = 所有 SUBS
+            // fake = 所有 SUBS；guest = legacy GUEST
             if (isFakeTokenRequest && conversionSourceToken) {
                 const sourceTokenData = await getToken(env, conversionSourceToken);
                 if (sourceTokenData) {
@@ -291,7 +284,7 @@ async function handleRequest(request, env) {
                 } else {
                     selectedSources = await getAllManagedSources(env);
                 }
-            } else if (legacyAdminPath || isFakeTokenRequest) {
+            } else if (isFakeTokenRequest) {
                 selectedSources = await getAllManagedSources(env);
             } else if (legacyGuestPath) {
                 // 如果旧 guest 没有 SUBS 绑定，则使用旧 LINK.txt / LINK 环境变量。
@@ -352,33 +345,6 @@ async function handleRequest(request, env) {
                 );
             }
 
-            // auto / mytoken：管理员后台仍支持旧入口，但新项目推荐 /admin
-            if (legacyAdminPath) {
-                if (isAdminLoginEnabled(adminUser, adminPass)) {
-                    const isLoggedIn = await isAdminLoggedIn(request, mytoken, adminUser, adminPass);
-                    if (!isLoggedIn) {
-                        if (request.method === 'POST') {
-                            return await handleAdminLogin(request, url, mytoken, adminUser, adminPass);
-                        }
-                        return new Response(renderLoginPage(url), {
-                            headers: {
-                                'Content-Type': 'text/html;charset=utf-8',
-                                'Cache-Control': 'no-store'
-                            }
-                        });
-                    }
-                }
-
-                return await handleAdmin(request, env, {
-                    adminUser,
-                    adminPass,
-                    effectiveSubConverter,
-                    effectiveSubConfig,
-                    effectiveSubProtocol,
-                    hasCustomApi,
-                    hasCustomConfig
-                });
-            }
         }
 
         // ==================== 原 CF-SUB 核心订阅处理 ====================
@@ -387,7 +353,6 @@ async function handleRequest(request, env) {
             env,
             selectedSources,
             {
-                mytoken,
                 fakeToken,
                 effectiveSubConverter,
                 effectiveSubConfig,
@@ -657,7 +622,6 @@ function validCustomToken(token) {
     const lower = token.toLowerCase();
     const reserved = new Set([
         'admin', 'api', 'login', 'logout', 'favicon.ico', 'auto',
-        String(mytoken || '').toLowerCase(),
         String(guestToken || '').toLowerCase()
     ]);
 
@@ -777,7 +741,7 @@ async function handleAdmin(request, env, runtime) {
                     subConfig: String(data.settings?.subConfig || '').trim(),
                     noAds: String(data.settings?.noAds || '').trim(),
 
-                    // 保留旧配置
+                    // 保留兼容配置
                     guest: String(data.settings?.guest || old.guest || ''),
                     user: String(data.settings?.user || old.user || ''),
                     pass: data.settings?.pass
@@ -1512,15 +1476,15 @@ function escapeHTML(text = '') {
     return String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
-async function getAdminSessionValue(user, pass, token) {
+async function getAdminSessionValue(user, pass) {
     if (!user || !pass) return '';
-    return await MD5MD5(`${user}:${pass}:${token}:admin-login`);
+    return await MD5MD5(`${user}:${pass}:admin-login`);
 }
 
 function isAdminLoginEnabled(user, pass) { return !!(user && pass); }
 
-async function isAdminLoggedIn(request, token, user, pass) {
-    const session = await getAdminSessionValue(user, pass, token);
+async function isAdminLoggedIn(request, user, pass) {
+    const session = await getAdminSessionValue(user, pass);
     return session ? getCookie(request, 'CF_SUB_ADMIN') === session : false;
 }
 
@@ -1529,7 +1493,7 @@ function buildAdminCookie(value, url) {
     return `CF_SUB_ADMIN=${encodeURIComponent(value)}; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax${secure}`;
 }
 
-async function handleAdminLogin(request, url, token, user, pass) {
+async function handleAdminLogin(request, url, user, pass) {
     let inputUser = '';
     let inputPass = '';
     try {
@@ -1540,7 +1504,7 @@ async function handleAdminLogin(request, url, token, user, pass) {
         return new Response(renderLoginPage(url, '登录请求格式不正确'), { status: 400, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
     }
     if (inputUser === user && inputPass === pass) {
-        const session = await getAdminSessionValue(user, pass, token);
+        const session = await getAdminSessionValue(user, pass);
         return new Response('', { status: 302, headers: { 'Location': url.pathname, 'Set-Cookie': buildAdminCookie(session, url), 'Cache-Control': 'no-store' } });
     }
     return new Response(renderLoginPage(url, '用户名或密码错误'), { status: 401, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
@@ -2131,12 +2095,6 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 </div>`;
 }).join('') : `<div class="empty">暂无访客订阅链接。创建 TOKEN 后才会产生公开订阅地址。</div>`}
 </div>
-</section>
-
-<section class="panel">
-<h2 class="section-title">管理员直接订阅链接</h2>
-<div class="section-note">保留 CF-SUB 的 /auto 管理聚合入口。它会使用当前全部启用的 SUBS。</div>
-${renderLinkList(getSubscriptionLinks(url, mytoken))}
 </section>
 
 <section class="panel">
