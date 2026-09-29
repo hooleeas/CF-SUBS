@@ -69,6 +69,8 @@ export default {
         const userAgent = userAgentHeader.toLowerCase();
         const url = new URL(request.url);
         const queryToken = url.searchParams.get('token') || '';
+        // SUBAPI 转换内部请求：记录原始访客 TOKEN，确保转换时只使用该 TOKEN 绑定的 SUBS
+        const conversionSourceToken = url.searchParams.get('sourceToken') || '';
 
         // 每次请求重新从环境变量读取，保持 CF-SUB 原有变量行为
         mytoken = env.TOKEN || mytoken;
@@ -266,7 +268,14 @@ export default {
         } else {
             // 兼容旧 CF-SUB：
             // auto = 所有 SUBS；guest = legacy GUEST；fake = 所有 SUBS
-            if (legacyAdminPath || isFakeTokenRequest) {
+            if (isFakeTokenRequest && conversionSourceToken) {
+                const sourceTokenData = await getToken(env, conversionSourceToken);
+                if (sourceTokenData) {
+                    selectedSources = await getSourcesForToken(env, sourceTokenData);
+                } else {
+                    selectedSources = await getAllManagedSources(env);
+                }
+            } else if (legacyAdminPath || isFakeTokenRequest) {
                 selectedSources = await getAllManagedSources(env);
             } else if (legacyGuestPath) {
                 // 如果旧 guest 没有 SUBS 绑定，则使用旧 LINK.txt / LINK 环境变量。
@@ -1058,7 +1067,8 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
         }
     }
 
-    const conversionSeed = `${new URL(request.url).origin}/${await MD5MD5(runtime.fakeToken)}?token=${runtime.fakeToken}`;
+    const sourceToken = new URL(request.url).searchParams.get('sourceToken') || token || '';
+    const conversionSeed = `${new URL(request.url).origin}/${await MD5MD5(runtime.fakeToken)}?token=${runtime.fakeToken}${sourceToken ? `&sourceToken=${encodeURIComponent(sourceToken)}` : ''}`;
     let 订阅转换URL = conversionSeed;
     let 追加UA = 'v2rayn';
     const requestUrl = new URL(request.url);
