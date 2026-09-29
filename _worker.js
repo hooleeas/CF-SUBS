@@ -313,12 +313,6 @@ async function handleRequest(request, env) {
                     renderGuestPage(
                         url,
                         tokenData.url,
-                        status.finalApiUrl,
-                        status.finalConfigUrl,
-                        status.guestApiHtml,
-                        status.guestConfigHtml,
-                        status.guestApiCss,
-                        status.guestConfigCss,
                         tokenData.name
                     ),
                     { headers: { 'Content-Type': 'text/html;charset=utf-8' } }
@@ -1809,7 +1803,7 @@ ${error ? `<div class="error">${escapeHTML(error)}</div>` : ''}
 </html>`;
 }
 
-function renderGuestPage(url, guest, displayApiUrl, displayConfig, apiHtml, configHtml, apiCss, configCss, guestName = '') {
+function renderGuestPage(url, guest, guestName = '') {
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -1827,25 +1821,8 @@ function renderGuestPage(url, guest, displayApiUrl, displayConfig, apiHtml, conf
 <div class="subtitle">复制订阅链接或生成二维码</div>
 </header>
 <section class="panel">
-<h2 class="section-title">订阅链接</h2>
+<h2 class="section-title">订阅地址</h2>
 ${renderLinkList(getSubscriptionLinks(url, guest))}
-</section>
-<section class="panel">
-<h2 class="section-title">订阅转换服务</h2>
-<div class="link-list">
-<div class="link-item">
-<div class="link-label">订阅转换后端 SUBAPI</div>
-<div class="status-indicator ${apiCss}">${apiHtml}</div>
-<div class="section-note" style="margin-top:12px; margin-bottom:6px;">当前配置</div>
-<a class="link-url" href="${escapeHTML(displayApiUrl)}" target="_blank">${escapeHTML(displayApiUrl)}</a>
-</div>
-<div class="link-item">
-<div class="link-label">订阅转换规则 SUBCONFIG</div>
-<div class="status-indicator ${configCss}">${configHtml}</div>
-<div class="section-note" style="margin-top:12px; margin-bottom:6px;">当前配置</div>
-<a class="link-url" href="${escapeHTML(displayConfig)}" target="_blank">${escapeHTML(displayConfig)}</a>
-</div>
-</div>
 </section>
 <div id="current-qrcode"></div>
 </main>
