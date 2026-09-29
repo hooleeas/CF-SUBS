@@ -774,24 +774,12 @@ async function handleAdmin(request, env, runtime) {
                 return jsonResponse({ ok: true, adminPath: next.adminPath });
             }
 
-            if (data.type === 'config_partial') {
-                const old = await getConfig(env);
-                const field = String(data.field || '').trim();
-                if (!['subApi', 'subConfig', 'noAds'].includes(field)) {
-                    return new Response('无效的设置项', { status: 400 });
-                }
-                const next = { ...old };
-                next[field] = String(data.value ?? '').trim();
-                await env.KV.put('CONFIG.json', JSON.stringify(next));
-                return jsonResponse({ ok: true });
-            }
-
             if (data.type === 'sub_create') {
                 const name = normalizeName(data.name);
                 const sources = cleanSourceList(data.sources);
 
-                if (!validName(name)) return new Response('SUB 名称不能为空且不能超过 80 个字符', { status: 400 });
-                if (await isSubNameUsed(env, name)) return new Response('SUB 名称已存在，不能重名', { status: 409 });
+                if (!validName(name)) return new Response('SUBS 名称不能为空且不能超过 80 个字符', { status: 400 });
+                if (await isSubNameUsed(env, name)) return new Response('SUBS 名称已存在，不能重名', { status: 409 });
                 if (!sources.length) return new Response('至少添加一个订阅地址或单节点', { status: 400 });
 
                 const id = makeSubId();
@@ -816,8 +804,8 @@ async function handleAdmin(request, env, runtime) {
                 const name = normalizeName(data.name);
                 const sources = cleanSourceList(data.sources);
 
-                if (!validName(name)) return new Response('SUB 名称不能为空且不能超过 80 个字符', { status: 400 });
-                if (await isSubNameUsed(env, name, id)) return new Response('SUB 名称已存在，不能重名', { status: 409 });
+                if (!validName(name)) return new Response('SUBS 名称不能为空且不能超过 80 个字符', { status: 400 });
+                if (await isSubNameUsed(env, name, id)) return new Response('SUBS 名称已存在，不能重名', { status: 409 });
                 if (!sources.length) return new Response('至少添加一个订阅地址或单节点', { status: 400 });
 
                 const item = {
@@ -1299,8 +1287,6 @@ async function nginx(titleName) {
 <title>${escapeHTML(titleName)}</title>
 <style>
     body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
-
-.setting-view{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:16px;width:100%}.setting-view>button{justify-self:end;align-self:start}.setting-edit{margin-top:18px;padding-top:18px;border-top:1px solid var(--border,#e5e7eb)}
 </style>
 </head>
 <body>
@@ -1567,9 +1553,6 @@ function getToolStyles() {
         .subtitle { margin-top: 8px; color: #666; font-size: 13px; }
         .panel { background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(229, 229, 223, 0.8); border-radius: 20px; padding: 16px; margin-top: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); transition: background 0.3s, border-color 0.3s; }
         .section-title { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
-        .setting-view { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px; width: 100%; }
-        .setting-view > button { justify-self: end; align-self: start; }
-        .setting-edit { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border, #e5e7eb); }
         .section-note { margin: 4px 0 10px; color: #888; font-size: 12px; }
         .link-list { display: grid; gap: 10px; }
         .link-item { border: 1px solid rgba(229, 229, 223, 0.6); border-radius: 12px; padding: 12px; background: rgba(255, 255, 255, 0.5); transition: background 0.3s, border-color 0.3s; }
@@ -1599,7 +1582,7 @@ function getToolStyles() {
         .status-error { background: rgba(244, 67, 54, 0.1); color: #c62828; border: 1px solid rgba(244, 67, 54, 0.2); }
         #current-qrcode { display: none; margin-top: 12px; padding: 12px; border: 1px solid rgba(229, 229, 223, 0.6); border-radius: 12px; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); width: fit-content; max-width: 100%; }
         .hidden { display: none !important; }
-        .modal-overlay { pointer-events: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
         .modal-content { background: rgba(255, 255, 255, 0.95); border-radius: 20px; padding: 24px; width: 90%; max-width: 480px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); border: 1px solid rgba(255, 255, 255, 0.5); transition: background 0.3s, border-color 0.3s; margin: 20px auto; }
         @media (prefers-color-scheme: dark) {
             body { background: #121212; color: #e0e0e0; }
@@ -1742,16 +1725,18 @@ function renderToolScripts(includeEditor = false) {
             }).then(function (res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
-            }).then(function (text) {
-                let data = {};
-                try { data = JSON.parse(text); } catch (e) {}
-                statusElem.textContent = '已保存 ' + new Date().toLocaleString();
-                statusElem.style.color = 'var(--coral, #2e7d32)';
-                if (isSec && data.adminPath) {
-                    setTimeout(() => window.location.replace('/'), 300);
-                } else {
-                    setTimeout(() => window.location.reload(), 500);
-                }
+            }).then(function (res) {
+                return res.text().then(function (text) {
+                    let data = {};
+                    try { data = JSON.parse(text); } catch (e) {}
+                    statusElem.textContent = '已保存 ' + new Date().toLocaleString();
+                    statusElem.style.color = 'var(--coral, #2e7d32)';
+                    if (isSec && data.adminPath) {
+                        setTimeout(() => window.location.replace('/'), 300);
+                    } else {
+                        setTimeout(() => window.location.reload(), 500);
+                    }
+                });
             }).catch(function (err) {
                 statusElem.textContent = '保存失败: 网络异常或超时';
                 statusElem.style.color = '#c62828';
@@ -1834,6 +1819,42 @@ function renderGuestPage(url, guest, displayApiUrl, displayConfig, apiHtml, conf
 </head>
 <body>
 <div id="copyNotice" class="toast"></div>
+<!-- 配置编辑 Modal -->
+<div id="configModal" class="modal-overlay">
+<div class="modal-content">
+<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">⚙️ <span id="configModalTitle">编辑配置</span></h2>
+
+<div class="field" id="config-edit-name-field">
+<label>名称</label>
+<input id="config-edit-name" type="text" placeholder="例如：CF-SUBS">
+</div>
+
+<div class="field" id="config-edit-api-field">
+<label>SUBAPI</label>
+<input id="config-edit-api" type="text" placeholder="留空使用默认 SUBAPI">
+<div class="section-note">留空表示使用默认转换服务。</div>
+</div>
+
+<div class="field" id="config-edit-config-field">
+<label>SUBCONFIG</label>
+<textarea id="config-edit-config" style="min-height:120px" placeholder="留空使用默认 SUBCONFIG"></textarea>
+<div class="section-note">留空表示使用默认转换规则。</div>
+</div>
+
+<div class="field" id="config-edit-noads-field">
+<label>节点屏蔽(NOADS)</label>
+<textarea id="config-edit-noads" style="min-height:140px" placeholder="例如：加入TG群, 订阅YouTube频道, https://t.me ..."></textarea>
+<div class="section-note">使用英文逗号、空格或换行分隔。</div>
+</div>
+
+<div class="actions" style="justify-content:flex-end;margin-top:24px;">
+<button type="button" class="secondary" onclick="closeConfigModal()">取消</button>
+<button type="button" onclick="saveConfigCard(this)">保存</button>
+</div>
+<span id="configCardSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
+</div>
+</div>
+
 <main class="page">
 <header class="header">
 <h1 class="title">${escapeHTML(guestName ? `${FileName} · ${guestName}` : `${FileName} 访客订阅`)}</h1>
@@ -1924,7 +1945,7 @@ ${getToolStyles()}
 <div id="copyNotice" class="toast"></div>
 
 <!-- SUB Modal -->
-<div id="subsModal" class="modal-overlay" style="display:none;pointer-events:none;">
+<div id="subsModal" class="modal-overlay">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">📦 <span id="subsModalTitle">创建聚合节点</span></h2>
 <div class="field">
@@ -1948,7 +1969,7 @@ ${getToolStyles()}
 </div>
 
 <!-- URL Modal -->
-<div id="urlModal" class="modal-overlay" style="display:none;pointer-events:none;">
+<div id="urlModal" class="modal-overlay">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🔗 <span id="urlModalTitle">创建订阅链接</span></h2>
 
@@ -1986,7 +2007,7 @@ ${getToolStyles()}
 </div>
 
 <!-- 安全设置 Modal -->
-<div id="securityModal" class="modal-overlay" style="display:none;pointer-events:none;">
+<div id="securityModal" class="modal-overlay">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🛡️ 账户与安全设置</h2>
 <div class="field"><label>后台登录账号 (USER)</label><input id="sec-user" type="text" value="${escapeHTML(settings.user || '')}" placeholder="例如：admin"></div>
@@ -2002,7 +2023,7 @@ ${getToolStyles()}
 </div>
 
 <!-- 主页设置 Modal -->
-<div id="fakeModal" class="modal-overlay" style="display:none;pointer-events:none;">
+<div id="fakeModal" class="modal-overlay">
 <div class="modal-content">
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🏠 主页设置</h2>
 <div class="status-indicator ${fakeStatusCss}" style="margin-bottom:16px;">${fakeStatusHtml}</div>
@@ -2049,14 +2070,54 @@ ${getToolStyles()}
 </header>
 
 <section class="panel">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+<div>
 <h2 class="section-title">全局名称设置 (SUBNAME)</h2>
-<div class="field"><input id="config-subname" type="text" value="${escapeHTML(settings.subName)}" placeholder="例如：CF-SUBS"></div>
+<div class="section-note">当前名称：${escapeHTML(settings.subName || 'CF-SUBS')}</div>
+</div>
+<button type="button" class="secondary" onclick="openConfigModal('name')">编辑</button>
+</div>
+</section>
+
+<section class="panel">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+<div style="min-width:0;">
+<h2 class="section-title">订阅转换后端 SUBAPI</h2>
+<div class="status-indicator ${status.adminApiCss}" style="margin-top:8px;">${status.adminApiHtml}</div>
+<div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
+<a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
+</div>
+<button type="button" class="secondary" onclick="openConfigModal('api')">编辑</button>
+</div>
+</section>
+
+<section class="panel">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+<div style="min-width:0;">
+<h2 class="section-title">订阅转换规则 SUBCONFIG</h2>
+<div class="status-indicator ${status.adminConfigCss}" style="margin-top:8px;">${status.adminConfigHtml}</div>
+<div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
+<a class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
+</div>
+<button type="button" class="secondary" onclick="openConfigModal('config')">编辑</button>
+</div>
+</section>
+
+<section class="panel">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+<div style="min-width:0;flex:1;">
+<h2 class="section-title">节点屏蔽(NOADS)</h2>
+<div class="section-note">当前屏蔽内容</div>
+<div class="source-box" style="margin-top:8px;max-height:140px;">${escapeHTML(settings.noAds || '未设置')}</div>
+</div>
+<button type="button" class="secondary" onclick="openConfigModal('noads')">编辑</button>
+</div>
 </section>
 
 <section class="panel">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
 <div>
-<h2 class="section-title">聚合节点（SUB）</h2>
+<h2 class="section-title">聚合节点 (SUB)</h2>
 <div class="section-note">SUB 是聚合节点配置，不是订阅链接。默认为空，可创建多个且名称不能重复。</div>
 </div>
 <button type="button" onclick="openSubCreate()">＋ 创建聚合节点</button>
@@ -2084,7 +2145,7 @@ ${subs.length ? subs.map(s => `
 <section class="panel">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
 <div>
-<h2 class="section-title">订阅链接（URL）</h2>
+<h2 class="section-title">订阅链接 (URL)</h2>
 <div class="section-note">创建订阅链接才会生成公开订阅入口。URL 可以绑定一个或多个 SUB。</div>
 </div>
 <button type="button" onclick="openUrlCreate()">＋ 创建订阅链接</button>
@@ -2116,56 +2177,10 @@ ${tokens.length ? tokens.map(t => {
 ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span>`).join('') : '<span class="small-note">未绑定聚合节点</span>'}
 </div>
 </div>`;
-}).join('') : `<div class="empty">暂无订阅链接。创建订阅链接后才会产生公开订阅地址。</div>`}
+}).join('') : `<div class="empty">暂无订阅链接。创建 URL 后才会产生公开订阅地址。</div>`}
 </div>
 </section>
 
-<section class="panel setting-card">
-<div class="setting-view">
-<div>
-<h2 class="section-title">订阅转换后端 SUBAPI</h2>
-<div class="status-indicator ${status.adminApiCss}" style="margin-top:8px;">${status.adminApiHtml}</div>
-<div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
-<a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
-</div>
-<button type="button" data-setting="subApi" onclick="openSettingModal('subApi')">编辑</button>
-</div>
-</section>
-
-<section class="panel setting-card">
-<div class="setting-view">
-<div>
-<h2 class="section-title">订阅转换规则 SUBCONFIG</h2>
-<div class="status-indicator ${status.adminConfigCss}" style="margin-top:8px;">${status.adminConfigHtml}</div>
-<div class="section-note" style="margin-top:12px;margin-bottom:6px;">当前配置</div>
-<a class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
-</div>
-<button type="button" data-setting="subConfig" onclick="openSettingModal('subConfig')">编辑</button>
-</div>
-</section>
-
-<section class="panel setting-card">
-<div class="setting-view">
-<div>
-<h2 class="section-title">节点屏蔽（NOADS）</h2>
-<div class="section-note" style="margin-top:8px;">${settings.noAds ? `已设置 ${settings.noAds.split(/[, \r\n]+/).filter(Boolean).length} 个屏蔽关键词` : '当前未设置屏蔽关键词'}</div>
-</div>
-<button type="button" data-setting="noAds" onclick="openSettingModal('noAds')">编辑</button>
-</div>
-</section>
-
-<!-- 通用设置编辑 Modal：与 SUB / URL 使用相同的背景虚化弹窗机制 -->
-<div id="settingModal" class="modal-overlay" style="display:none;pointer-events:none;" onclick="if(event.target===this)closeSettingModal()">
-<div class="modal-content">
-<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">⚙️ <span id="settingModalTitle">编辑设置</span></h2>
-<div id="settingModalBody"></div>
-<div class="actions" style="justify-content:flex-end;margin-top:24px;">
-<button type="button" class="secondary" onclick="closeSettingModal()">取消</button>
-<button type="button" onclick="saveSettingModal(this)">保存</button>
-</div>
-<span id="settingModalStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
-</div>
-</div>
 
 <div id="current-qrcode"></div>
 </main>
@@ -2173,34 +2188,73 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <script>
 const SUBS = ${JSON.stringify(subs)};
 const TOKENS = ${JSON.stringify(tokens)};
-const SETTING_VALUES = ${JSON.stringify({
- subApi: settings.subApi || '',
- subConfig: settings.subConfig || '',
- noAds: settings.noAds || ''
-})};
 let editingSub = '';
 let editingUrlValue = '';
-window.addEventListener('error', function(e){ console.error('CF-SUBS UI error:', e.error || e.message); });
 
 function showToast(message){
  const el=document.getElementById('copyNotice');
- if(!el)return;
  el.textContent=message;
  el.style.display='block';
  clearTimeout(window.__toast);
- window.__toast=setTimeout(function(){el.style.display='none';},1500);
+ window.__toast=setTimeout(()=>el.style.display='none',1500);
 }
 
 function copyValue(value){
  navigator.clipboard.writeText(value).then(()=>showToast('已复制到剪贴板')).catch(()=>showToast('复制失败，请手动复制'));
 }
 
-function showModal(id){ const el=document.getElementById(id); if(!el)return; el.style.display='flex'; el.style.pointerEvents='auto'; }
-function hideModal(id){ const el=document.getElementById(id); if(!el)return; el.style.display='none'; el.style.pointerEvents='none'; }
-function openSecurityModal(){showModal('securityModal')}
-function closeSecurityModal(){hideModal('securityModal')}
-function openFakeModal(){showModal('fakeModal')}
-function closeFakeModal(){hideModal('fakeModal')}
+function openConfigModal(type){
+ const modal=document.getElementById('configModal');
+ const title=document.getElementById('configModalTitle');
+ ['config-edit-name-field','config-edit-api-field','config-edit-config-field','config-edit-noads-field'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+ document.getElementById('configCardSaveStatus').textContent='';
+ document.getElementById('config-edit-name').value=${JSON.stringify('')};
+ const values={
+   name:{title:'编辑全局名称 (SUBNAME)',field:'config-edit-name-field',value:${JSON.stringify(settings.subName || '')}},
+   api:{title:'编辑订阅转换后端 SUBAPI',field:'config-edit-api-field',value:${JSON.stringify(settings.subApi || '')}},
+   config:{title:'编辑订阅转换规则 SUBCONFIG',field:'config-edit-config-field',value:${JSON.stringify(settings.subConfig || '')}},
+   noads:{title:'编辑节点屏蔽(NOADS)',field:'config-edit-noads-field',value:${JSON.stringify(settings.noAds || '')}}
+ };
+ const item=values[type];
+ if(!item)return;
+ title.textContent=item.title;
+ document.getElementById(item.field).classList.remove('hidden');
+ if(type==='name')document.getElementById('config-edit-name').value=item.value;
+ if(type==='api')document.getElementById('config-edit-api').value=item.value;
+ if(type==='config')document.getElementById('config-edit-config').value=item.value;
+ if(type==='noads')document.getElementById('config-edit-noads').value=item.value;
+ modal.dataset.type=type;
+ modal.style.display='flex';
+}
+function closeConfigModal(){document.getElementById('configModal').style.display='none'}
+function saveConfigCard(button){
+ const modal=document.getElementById('configModal');
+ const type=modal.dataset.type;
+ const statusElem=document.getElementById('configCardSaveStatus');
+ const settings={
+   subName:'' , subApi:'', subConfig:'', noAds:'',
+   user:document.getElementById('sec-user')?.value||${JSON.stringify(settings.user || '')},
+   pass:document.getElementById('sec-pass')?.value||${JSON.stringify(settings.pass || '')},
+   fakeMode:${JSON.stringify(settings.fakeMode || '')}, fakeUrl:${JSON.stringify(settings.fakeUrl || '')}, fakeUrl302:${JSON.stringify(settings.fakeUrl302 || '')}, fakeCode:${JSON.stringify(settings.fakeCode || '')},
+   adminPath:${JSON.stringify(settings.adminPath || 'admin')}
+ };
+ settings.subName=type==='name'?document.getElementById('config-edit-name').value:${JSON.stringify(settings.subName || '')};
+ settings.subApi=type==='api'?document.getElementById('config-edit-api').value:${JSON.stringify(settings.subApi || '')};
+ settings.subConfig=type==='config'?document.getElementById('config-edit-config').value:${JSON.stringify(settings.subConfig || '')};
+ settings.noAds=type==='noads'?document.getElementById('config-edit-noads').value:${JSON.stringify(settings.noAds || '')};
+ button.disabled=true;
+ const old=button.textContent; button.textContent='保存中...';
+ fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'config',settings})})
+ .then(async res=>{if(!res.ok)throw new Error(await res.text());return res.text()})
+ .then(()=>{statusElem.textContent='已保存';setTimeout(()=>window.location.reload(),350)})
+ .catch(err=>{statusElem.textContent='保存失败: '+err.message;statusElem.style.color='#c62828'})
+ .finally(()=>{button.disabled=false;button.textContent=old});
+}
+
+function openSecurityModal(){document.getElementById('securityModal').style.display='flex'}
+function closeSecurityModal(){document.getElementById('securityModal').style.display='none'}
+function openFakeModal(){document.getElementById('fakeModal').style.display='flex'}
+function closeFakeModal(){document.getElementById('fakeModal').style.display='none'}
 
 function switchFakeMode(){
  const mode=document.getElementById('fake-mode').value;
@@ -2265,69 +2319,6 @@ function saveConfig(button,type){
  });
 }
 
-let settingModalField='';
-
-function escapeHTML(value){
- return String(value ?? '').replace(/[&<>\"']/g, function(ch){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]); });
-}
-
-function openSettingModal(field){
- settingModalField=field;
- const modal=document.getElementById('settingModal');
- const title=document.getElementById('settingModalTitle');
- const body=document.getElementById('settingModalBody');
- const status=document.getElementById('settingModalStatus');
- if(!modal||!title||!body)return;
- status.textContent='';
- status.style.color='';
- const configs={
-   subApi:{title:'编辑订阅转换后端 SUBAPI',html:'<div class="field"><label>SUBAPI 地址</label><input id="setting-modal-input" type="text" value="'+escapeAttr(SETTING_VALUES.subApi)+'" placeholder="留空使用默认值"></div>'},
-   subConfig:{title:'编辑订阅转换规则 SUBCONFIG',html:'<div class="field"><label>SUBCONFIG 地址</label><textarea id="setting-modal-input" style="min-height:120px" placeholder="留空使用默认值">'+escapeHTML(SETTING_VALUES.subConfig)+'</textarea></div>'},
-   noAds:{title:'编辑节点屏蔽（NOADS）',html:'<div class="field"><label>屏蔽关键词</label><textarea id="setting-modal-input" style="min-height:160px" placeholder="示例: 加入TG群, 订阅YouTube频道, https://t.me ......">'+escapeHTML(SETTING_VALUES.noAds)+'</textarea><div class="section-note">使用英文逗号、空格或换行分隔</div></div>'}
- };
- const item=configs[field];
- if(!item)return;
- title.textContent=item.title;
- body.innerHTML=item.html;
- modal.style.display='flex';
- modal.style.pointerEvents='auto';
- setTimeout(()=>{ const input=document.getElementById('setting-modal-input'); if(input) input.focus(); },50);
-}
-
-function closeSettingModal(){
- const modal=document.getElementById('settingModal');
- if(modal){modal.style.display='none';modal.style.pointerEvents='none';}
- settingModalField='';
-}
-
-function escapeAttr(value){
- return escapeHTML(value).replace(/\n/g,'&#10;').replace(/\r/g,'&#13;');
-}
-
-async function saveSettingModal(button){
- const input=document.getElementById('setting-modal-input');
- const status=document.getElementById('settingModalStatus');
- if(!input||!settingModalField)return;
- button.disabled=true;
- const oldText=button.textContent;
- button.textContent='保存中...';
- status.textContent='';
- try{
-   const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'config_partial',field:settingModalField,value:input.value})});
-   const msg=await res.text();
-   if(!res.ok)throw new Error(msg||'保存失败');
-   status.textContent='已保存';
-   status.style.color='#2e7d32';
-   setTimeout(()=>location.reload(),350);
- }catch(err){
-   status.textContent='保存失败：'+err.message;
-   status.style.color='#c62828';
- }finally{
-   button.disabled=false;
-   button.textContent=oldText;
- }
-}
-
 function openSubCreate(){
  editingSub='';
  document.getElementById('subsModalTitle').textContent='创建聚合节点';
@@ -2335,10 +2326,10 @@ function openSubCreate(){
  document.getElementById('sub-edit-sources').value='';
  document.getElementById('sub-edit-enabled').checked=true;
  document.getElementById('subSaveStatus').textContent='';
- showModal('subsModal');
+ document.getElementById('subsModal').style.display='flex';
 }
 
-function closeSubsModal(){hideModal('subsModal')}
+function closeSubsModal(){document.getElementById('subsModal').style.display='none'}
 
 function editSub(id){
  const item=SUBS.find(x=>x.id===id);
@@ -2349,7 +2340,7 @@ function editSub(id){
  document.getElementById('sub-edit-sources').value=(item.sources||[]).join('\\n');
  document.getElementById('sub-edit-enabled').checked=item.enabled!==false;
  document.getElementById('subSaveStatus').textContent='';
- showModal('subsModal');
+ document.getElementById('subsModal').style.display='flex';
 }
 
 async function saveSubs(){
@@ -2412,10 +2403,10 @@ function openUrlCreate(){
  document.getElementById('url-edit-value').disabled=true;
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs([]);
- showModal('urlModal');
+ document.getElementById('urlModal').style.display='flex';
 }
 
-function closeUrlModal(){hideModal('urlModal')}
+function closeUrlModal(){document.getElementById('urlModal').style.display='none'}
 
 function switchUrlMode(){
  const mode=document.getElementById('url-edit-mode').value;
@@ -2443,7 +2434,7 @@ function editUrl(token){
  document.getElementById('urlModeNote').textContent='URL 可以直接修改；保存后旧 URL 立即失效，新 URL 立即生效。';
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs(item.subs||[]);
- showModal('urlModal');
+ document.getElementById('urlModal').style.display='flex';
 }
 
 async function saveUrl(){
@@ -2492,23 +2483,6 @@ async function deleteUrl(token){
 }
 
 switchFakeMode();
-
-// Direct event bindings: keep admin controls independent.
-document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('[data-setting]').forEach(function (btn) {
-        btn.addEventListener('click', function () { openSettingModal(btn.getAttribute('data-setting')); });
-    });
-    var buttons = Array.from(document.querySelectorAll('button'));
-    var homeBtn = buttons.find(function (b) { return b.textContent.trim() === '🏠 主页'; });
-    var securityBtn = buttons.find(function (b) { return b.textContent.trim() === '🛡️ 安全'; });
-    var createSubBtn = buttons.find(function (b) { return b.textContent.trim() === '＋ 创建聚合节点'; });
-    var createUrlBtn = buttons.find(function (b) { return b.textContent.trim() === '＋ 创建订阅链接'; });
-    if (homeBtn) homeBtn.addEventListener('click', openFakeModal);
-    if (securityBtn) securityBtn.addEventListener('click', openSecurityModal);
-    if (createSubBtn) createSubBtn.addEventListener('click', openSubCreate);
-    if (createUrlBtn) createUrlBtn.addEventListener('click', openUrlCreate);
-});
-
 </script>
 </body>
 </html>`;
