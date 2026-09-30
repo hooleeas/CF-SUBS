@@ -1840,6 +1840,18 @@ function getSubUIStyles(){return getToolStyles()+`
 
 
 
+function getSubscriptionLinks(url, token) {
+    const base = `${url.origin}/${token}`;
+    return [
+        ['自适应订阅地址', base],
+        ['Base64订阅地址', `${base}?b64`],
+        ['Clash订阅地址', `${base}?clash`],
+        ['Sing-box订阅地址', `${base}?sb`],
+        ['Surge订阅地址', `${base}?surge`],
+        ['Loon订阅地址', `${base}?loon`],
+    ];
+}
+
 function renderGuestPage(url, guest, guestName = '') {
     const links = getSubscriptionLinks(url, guest);
     return `<!doctype html>
