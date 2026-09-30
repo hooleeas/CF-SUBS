@@ -1916,7 +1916,8 @@ ${getToolStyles()}
 .sub-row.sortable-item{touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab;-webkit-tap-highlight-color:transparent}
 .sub-row.sortable-item *{user-select:none;-webkit-user-select:none}
 .sub-row.sortable-item .drag-handle{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;cursor:grab}
-.sub-row.sortable-item .sub-head{pointer-events:none}
+.sub-row.sortable-item .sub-head{pointer-events:auto}
+.sub-row.sortable-item .drag-handle{pointer-events:auto}
 .sub-row.sortable-item .sub-head .actions{pointer-events:auto}
 .sub-row.sortable-item .actions button{cursor:pointer}
 .sub-row.sortable-item.dragging{touch-action:none;cursor:grabbing}
