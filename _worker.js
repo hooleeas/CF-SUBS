@@ -1573,8 +1573,9 @@ async function handleAdminLogin(request, url, token, user, pass) {
 function getToolStyles() {
     return `
         * { box-sizing: border-box; }
-        body { margin: 0; background: #f5f7fa; color: #202124; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.5; min-height: 100vh; transition: background 0.3s, color 0.3s; }
+        body { margin: 0; background: radial-gradient(circle at 0% 0%, rgba(222,246,235,.78), transparent 38%), linear-gradient(135deg, #f7faf8 0%, #eef7f2 52%, #e3f2e9 100%); color: #202124; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.5; min-height: 100vh; transition: background 0.3s, color 0.3s; background-attachment: fixed; }
         .page { width: 100%; max-width: 760px; margin: 0 auto; padding: 18px 14px 28px; }
+        .page.app-shell { max-width: 1100px; margin: 24px auto 40px; padding: 0 28px 34px; border: 1px solid rgba(255,255,255,.72); border-radius: 28px; background: linear-gradient(135deg, rgba(255,255,255,.82) 0%, rgba(246,252,248,.76) 48%, rgba(225,244,233,.82) 100%); box-shadow: 0 18px 55px rgba(50,90,70,.10); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); overflow: hidden; }
         .header { margin-bottom: 14px; }
         .title { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.2; color: #1a1a1a; transition: color 0.3s; }
         .subtitle { margin-top: 8px; color: #666; font-size: 13px; }
@@ -1612,7 +1613,8 @@ function getToolStyles() {
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 1000; overflow-y: auto; }
         .modal-content { background: rgba(255, 255, 255, 0.95); border-radius: 20px; padding: 24px; width: 90%; max-width: 480px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); border: 1px solid rgba(255, 255, 255, 0.5); transition: background 0.3s, border-color 0.3s; margin: 20px auto; }
         @media (prefers-color-scheme: dark) {
-            body { background: #121212; color: #e0e0e0; }
+            body { background: radial-gradient(circle at 0% 28%, rgba(0,188,212,.12), transparent 24%), radial-gradient(circle at 100% 100%, rgba(0,120,70,.20), transparent 34%), linear-gradient(180deg,#000 0%,#020807 58%,#00140b 100%); background-attachment: fixed; color: #e0e0e0; }
+            .page.app-shell { background: linear-gradient(135deg, rgba(1,5,6,.98) 0%, rgba(2,10,10,.96) 48%, rgba(0,54,35,.92) 100%); border-color: rgba(255,255,255,.13); box-shadow: 0 22px 75px rgba(0,0,0,.55); }
             .title { color: #f5f5f5; }
             .subtitle, .section-note, .muted { color: #aaa; }
             .panel { background: rgba(30, 30, 30, 0.75); border-color: rgba(255, 255, 255, 0.1); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
@@ -1635,18 +1637,6 @@ function getToolStyles() {
             #current-qrcode { background: rgba(255, 255, 255, 0.9); }
         }
     `;
-}
-
-function getSubscriptionLinks(url, token) {
-    const base = `https://${url.hostname}/${token}`;
-    return [
-        ['自适应订阅地址', base],
-        ['Base64订阅地址', `${base}?b64`],
-        ['Clash订阅地址', `${base}?clash`],
-        ['Sing-box订阅地址', `${base}?sb`],
-        ['Surge订阅地址', `${base}?surge`],
-        ['Loon订阅地址', `${base}?loon`],
-    ];
 }
 
 function renderLinkList(links) {
@@ -1834,36 +1824,62 @@ ${error ? `<div class="error">${escapeHTML(error)}</div>` : ''}
 </html>`;
 }
 
+function getSubUIStyles(){return getToolStyles()+`
+.page{width:100%;max-width:1240px;margin:24px auto 40px;padding:0 28px 34px;border:1px solid rgba(255,255,255,.62);border-radius:28px;background:rgba(255,255,255,.34);box-shadow:0 14px 45px rgba(50,70,90,.08);overflow:hidden}
+.app-shell{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.header{margin:0 -28px 18px;padding:28px 28px 24px;border-bottom:1px solid rgba(120,130,140,.18)}.home-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,520px);gap:28px;align-items:stretch}.hero-main{min-width:0;min-height:132px;height:132px;display:flex;flex-direction:column;align-items:flex-start}.title{margin:0;font-size:52px;font-weight:800;line-height:1.08;letter-spacing:-1.5px}.subtitle{margin-top:auto;padding-top:12px;font-size:14px;line-height:1.5;color:#687384;word-break:keep-all;overflow-wrap:normal;hyphens:none}.backend-version-card{min-height:132px;padding:28px 34px;border:1px solid rgba(255,255,255,.62);border-radius:28px;background:rgba(255,255,255,.58);box-shadow:0 8px 30px rgba(50,70,90,.06);box-sizing:border-box;display:flex;flex-direction:column;justify-content:center}.backend-version-label{font-size:13.5px;line-height:1.3;color:#69717d;margin-bottom:10px}.backend-version-value{font-size:19px;line-height:1.25;font-weight:750;word-break:break-word;overflow-wrap:anywhere;color:#111}
+.app-shell>.panel:first-of-type{margin-top:0}
+@media(max-width:900px){.page{max-width:760px;margin:14px auto 28px;padding:0 18px 28px;border-radius:22px}.header{margin:0 -18px 16px;padding:22px 18px 20px}.home-hero{grid-template-columns:1fr;gap:18px}.hero-main{min-height:auto}.title{font-size:40px;letter-spacing:-.9px}.subtitle{margin-top:14px;padding-top:0;font-size:11px;word-break:keep-all;overflow-wrap:normal;hyphens:none}.backend-version-card{min-height:108px;padding:22px 24px;border-radius:22px}.backend-version-label{font-size:12.5px;margin-bottom:7px}.backend-version-value{font-size:16px}}
+.panel{margin-top:12px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.checks{display:grid;gap:8px}.check{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:center;gap:8px;margin:0;padding:10px;border:1px solid rgba(229,229,223,.6);border-radius:10px;background:rgba(255,255,255,.5);cursor:pointer}
+.check input{width:18px;height:18px;margin:0}.check span{font-weight:600}.check small{grid-column:2;color:#888;font-size:12px;word-break:break-all;overflow-wrap:anywhere}
+.primary{width:100%;min-height:42px;margin-top:12px}.result-panel[hidden]{display:none}.result-label{margin-top:12px;margin-bottom:6px;font-size:12px;font-weight:600;color:#666}.result-url{padding:10px;border:1px solid rgba(229,229,223,.8);border-radius:8px;background:rgba(250,250,250,.7);color:#1f4b99;word-break:break-all;overflow-wrap:anywhere}
+@media(max-width:600px){.aggregate-result-modal{width:calc(100vw - 40px)}.aggregate-result-modal>#copyDirect{width:190px}.row{grid-template-columns:1fr}.page.app-shell{width:calc(100% - 28px);margin-left:14px;margin-right:14px}}
+@media(prefers-color-scheme:dark){body{background:#000;background-image:radial-gradient(circle at 0% 28%,rgba(0,188,212,.18),transparent 24%),radial-gradient(circle at 100% 100%,rgba(0,120,70,.22),transparent 32%),linear-gradient(180deg,#000 0%,#020807 58%,#00140b 100%);background-attachment:fixed;color:#f4f7f8}.page.app-shell{background:linear-gradient(135deg,rgba(1,5,6,.98) 0%,rgba(2,10,10,.96) 48%,rgba(0,54,35,.92) 100%);border-color:rgba(255,255,255,.13);box-shadow:0 20px 70px rgba(0,0,0,.55)}.header{border-bottom-color:rgba(255,255,255,.10)}.title{color:#fff}.subtitle{color:#9aa7b5}.backend-version-card{background:linear-gradient(135deg,rgba(4,10,14,.98) 0%,rgba(3,18,20,.98) 48%,rgba(0,65,42,.94) 100%);border-color:rgba(255,255,255,.16);box-shadow:0 12px 36px rgba(0,40,25,.28)}.backend-version-label{color:#91a0ae}.backend-version-value{color:#fff}.panel{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.10)}.section-note{color:#9aa7b5}.field input,.field textarea,.native-picker,.current-api-input,.current-config-input,.current-config-link{background:rgba(2,6,8,.82);border-color:rgba(255,255,255,.13);color:#f3f6f7}.native-picker option{background:#0b1012;color:#f3f6f7}.check{background:rgba(15,22,24,.7);border-color:rgba(255,255,255,.10)}.check small{color:#8e9aa6}.result-label{color:#aab4be}.result-url{background:rgba(2,6,8,.72);color:#64b5f6;border-color:rgba(255,255,255,.12)}}
+`;}
+
+
+
 function renderGuestPage(url, guest, guestName = '') {
-    return `<!DOCTYPE html>
-<html>
+    const links = getSubscriptionLinks(url, guest);
+    return `<!doctype html>
+<html lang="zh-CN">
 <head>
-<title>${escapeHTML(FileName)}访客订阅</title>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>${getToolStyles()}</style>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHTML(guestName ? `${FileName} · ${guestName}` : `${FileName} · 聚合订阅`)}</title>${SiteLogo?`<link rel="icon" href="${escapeHTML(SiteLogo)}">`:''}
+<style>
+${getSubUIStyles()}
+.guest-shell{max-width:1100px;padding-top:0!important}.guest-header{margin:0 -28px 18px;padding:28px;border-bottom:1px solid rgba(120,130,140,.18)}
+.guest-link-list{display:grid;gap:10px}.guest-link-item{position:relative;padding:12px;border:1px solid rgba(229,229,223,.6);border-radius:12px;background:rgba(255,255,255,.5)}
+.guest-link-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:30px}.guest-link-label{font-weight:700;word-break:break-word}
+.guest-link-url{display:block;width:100%;box-sizing:border-box;padding:10px 12px;margin-top:12px;border:1px solid rgba(229,229,223,.8);border-radius:9px;background:rgba(250,250,250,.7);color:#1f4b99;text-decoration:none;word-break:break-all;overflow-wrap:anywhere}
+.guest-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.guest-qrcode{display:none;background:#fff;border-radius:12px;padding:12px;margin:14px auto 0;width:max-content;max-width:100%;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+@media(max-width:640px){.guest-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.guest-header{margin:0 -18px 16px;padding:22px 18px 20px}.guest-header .title{font-size:40px}}
+@media(prefers-color-scheme:dark){.guest-link-item{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.10)}.guest-link-url{background:rgba(2,6,8,.82);border-color:rgba(255,255,255,.12);color:#64b5f6}}
+</style>
 <script src="https://cdn.jsdelivr.net/npm/@keeex/qrcodejs-kx@1.0.2/qrcode.min.js"></script>
 </head>
 <body>
 <div id="copyNotice" class="toast"></div>
-<main class="page">
-<header class="header">
-<h1 class="title">${escapeHTML(guestName ? `${FileName} · ${guestName}` : `${FileName} 访客订阅`)}</h1>
-<div class="subtitle">复制订阅链接或生成二维码</div>
-</header>
-<section class="panel">
-<h2 class="section-title">订阅地址</h2>
-${renderLinkList(getSubscriptionLinks(url, guest))}
-</section>
-<div id="current-qrcode"></div>
+<main class="page app-shell guest-shell">
+<header class="header guest-header"><h1 class="title">聚合订阅链接</h1><div class="subtitle">${escapeHTML(guestName || FileName)} · 复制订阅链接即可使用，也可以生成二维码</div></header>
+<section class="panel"><h2 class="section-title">订阅地址</h2><div class="guest-link-list">
+${links.map(([label,value])=>`<div class="guest-link-item"><div class="guest-link-head"><div class="guest-link-label">${escapeHTML(label)}</div></div><a class="guest-link-url" href="${escapeHTML(value)}" target="_blank" rel="noopener">${escapeHTML(value)}</a><div class="guest-actions"><button type="button" class="button guest-copy-btn" data-url="${escapeHTML(value)}" onclick="copyGuest(this)">复制</button><button type="button" class="button secondary guest-hide-btn" onclick="hideGuestQr(this)" style="display:none">隐藏二维码</button></div><div class="guest-qrcode"></div></div>`).join('')}
+</div></section>
 </main>
-${renderToolScripts(false)}
-</body>
-</html>`;
+<script>
+let guestToastTimer;
+function guestToast(message){const el=document.getElementById('copyNotice');el.textContent=message;el.style.display='block';clearTimeout(guestToastTimer);guestToastTimer=setTimeout(()=>el.style.display='none',1500)}
+function copyGuest(button){const value=button.dataset.url||'';const done=()=>{guestToast('已复制到剪贴板');showGuestQr(button)};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(value).then(done).catch(()=>guestToast('复制失败，请手动复制'));else{const ta=document.createElement('textarea');ta.value=value;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done()}catch(e){guestToast('复制失败，请手动复制')}ta.remove()}}
+function showGuestQr(button){const item=button.closest('.guest-link-item');const qr=item&&item.querySelector('.guest-qrcode');const copy=item&&item.querySelector('.guest-copy-btn');const hide=item&&item.querySelector('.guest-hide-btn');if(!item||!qr)return;document.querySelectorAll('.guest-link-item').forEach(function(x){if(x===item)return;const q=x.querySelector('.guest-qrcode'),c=x.querySelector('.guest-copy-btn'),h=x.querySelector('.guest-hide-btn');if(q){q.style.display='none';q.innerHTML=''}if(c)c.style.display='inline-flex';if(h)h.style.display='none'});qr.innerHTML='';qr.style.display='block';if(copy)copy.style.display='none';if(hide)hide.style.display='inline-flex';if(window.QRCode)new QRCode(qr,{text:value=button.dataset.url,width:220,height:220,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.Q})}
+function hideGuestQr(button){const item=button.closest('.guest-link-item');if(!item)return;const q=item.querySelector('.guest-qrcode'),c=item.querySelector('.guest-copy-btn'),h=item.querySelector('.guest-hide-btn');if(q){q.style.display='none';q.innerHTML=''}if(c)c.style.display='inline-flex';if(h)h.style.display='none'}
+</script></body></html>`;
 }
 
 
 /* =========================================================
+ * CF-SUB 管理后台/* =========================================================
  * CF-SUB 管理后台
  * 保持 CF-SUB 核心视觉与管理逻辑
  * ======================================================= */
@@ -1897,6 +1913,11 @@ function renderAdminPage(url, env, subs, tokens, settings, status) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 ${getToolStyles()}
+.admin-shell{max-width:1100px;padding-top:0!important}.admin-header{margin:0 -28px 18px;padding:28px;border-bottom:1px solid rgba(120,130,140,.18)}
+.sub-grid{display:grid;gap:10px}.sub-row{border:1px solid rgba(229,229,223,.6);border-radius:14px;padding:14px;background:rgba(255,255,255,.5);color:inherit;box-shadow:0 3px 14px rgba(50,90,70,.04);transition:transform .2s,box-shadow .2s,border-color .2s}.sub-row:hover{transform:translateY(-1px);box-shadow:0 7px 20px rgba(50,90,70,.08)}
+.sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.sub-name{font-weight:700;font-size:15px;color:inherit}.sub-count{color:#888;font-size:12px;margin-top:3px}.source-box{margin-top:10px;padding:10px;border-radius:10px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}.token-url{color:#1f4b99;word-break:break-all}.chip{display:inline-block;padding:4px 9px;margin:2px 4px 2px 0;border-radius:9px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}.check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}.inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.small-note{font-size:12px;color:#888;margin-top:6px}.edit-button{background:#111!important;color:#fff!important;border-color:#111!important;min-height:34px;padding:7px 14px}.edit-button:hover{background:#000!important;border-color:#000!important}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.panel-head .section-title{margin-bottom:0}.config-value{margin-top:10px;padding:10px 12px;border:1px solid rgba(229,229,223,.7);border-radius:10px;background:rgba(250,250,250,.65);font-size:13px;word-break:break-all;white-space:pre-wrap}
+@media(max-width:600px){.inline-row{grid-template-columns:1fr}.admin-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.admin-header{margin:0 -18px 16px;padding:22px 18px 20px}.admin-header>div:last-child{width:100%;display:grid!important;grid-template-columns:1fr 1fr 1fr;gap:8px}.admin-header>div:last-child>*{width:100%}.sub-head .actions{width:100%}.sub-head .actions button{flex:1}}
+@media(prefers-color-scheme:dark){.admin-shell{background:linear-gradient(135deg,rgba(1,5,6,.98) 0%,rgba(2,10,10,.96) 48%,rgba(0,54,35,.92) 100%)}.sub-row{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.10);color:#eee}.sub-count{color:#aaa}.source-box,.config-value{background:rgba(2,6,8,.55);border-color:rgba(255,255,255,.08);color:#ddd}.token-url{color:#64b5f6}.chip{background:rgba(100,181,246,.12);color:#90caf9}.check-list{background:rgba(20,20,20,.65);border-color:rgba(255,255,255,.12)}}
 .sub-grid{display:grid;gap:10px}
 .sub-row{border:1px solid rgba(229,229,223,.6);border-radius:12px;padding:12px;background:rgba(255,255,255,.5);color:inherit}
 .sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
@@ -1913,12 +1934,6 @@ ${getToolStyles()}
 .sortable-item.dragging{opacity:.55;transform:scale(.99);box-shadow:0 8px 22px rgba(0,0,0,.16)}
 #url-sub-list .check-item{padding:8px 10px;border:1px solid rgba(207,207,200,.45);border-radius:10px;background:rgba(250,250,250,.55)}
 #url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
-
-
-
-
-
-
 .inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small-note{font-size:12px;color:#888;margin-top:6px}
 .edit-button{background:#111!important;color:#fff!important;border-color:#111!important;min-height:34px;padding:7px 14px}
@@ -2101,8 +2116,8 @@ ${getToolStyles()}
 </div>
 </div>
 
-<main class="page">
-<header class="header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+<main class="page app-shell admin-shell">
+<header class="header admin-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;">
 <div>
 <h1 class="title">${escapeHTML(settings.subName)}</h1>
 <div class="subtitle">CF-SUBS · 汇聚订阅控制台</div>
@@ -2137,7 +2152,7 @@ ${getToolStyles()}
 
 <div id="sub-list" class="sub-grid" style="margin-top:12px;">
 ${subs.length ? subs.map(s => `
-<div class="sub-row" data-sort-id="${escapeHTML(s.id)}">
+<div class="sub-row">
 <div class="sub-head">
 <div style="display:flex;align-items:flex-start;gap:8px;">
 <div>
@@ -2250,10 +2265,10 @@ function renderSubList(){
    const name=escapeJS(s.name||'');
    const id=escapeJS(s.id||'');
    const count=s.sources?.length||0;
-   return '<div class="sub-row" data-sort-id="'+id+'">'
+   return '<div class="sub-row">'
     +'<div class="sub-head">'
     +'<div style="display:flex;align-items:flex-start;gap:8px;">'
-        +'<div>'
+    +'<div>'
     +'<div class="sub-name">'+name+'</div>'
     +'<div class="sub-count">'+count+' 个来源 · 已启用</div>'
     +'</div>'
@@ -2602,7 +2617,8 @@ function renderUrlSubs(selected){
    const id=escapeJS(s.id||'');
    const checked=selectedSet.has(String(s.id))?' checked':'';
    return '<label class="check-item sortable-item" data-sort-id="'+id+'">'
-        +'<input type="checkbox" value="'+id+'"'+checked+'>'
+    +'<span class="drag-handle" aria-hidden="true">⠿</span>'
+    +'<input type="checkbox" value="'+id+'"'+checked+'>'
     +'<span>'+escapeJS(s.name||'')+'</span>'
     +'</label>';
  }).join('');
