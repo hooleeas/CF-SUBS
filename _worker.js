@@ -1,5 +1,5 @@
 /**
- * CF-SUBS
+ * SUB-UI
  * 基于 CF-SUB 核心能力扩展的多 SUB / 多订阅链接 URL 管理版
  *
  * 核心原则：
@@ -582,7 +582,12 @@ async function listSubs(env) {
         cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
 
-    result.sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-CN'));
+    result.sort((a, b) => {
+        const ao = Number.isFinite(Number(a.order)) ? Number(a.order) : (Date.parse(a.createdAt || '') || 0);
+        const bo = Number.isFinite(Number(b.order)) ? Number(b.order) : (Date.parse(b.createdAt || '') || 0);
+        if (ao !== bo) return ao - bo;
+        return String(a.name).localeCompare(String(b.name), 'zh-CN');
+    });
     return result;
 }
 
@@ -682,7 +687,7 @@ async function getSourcesForToken(env, tokenData) {
 
     for (const id of ids) {
         const sub = await getSub(env, id);
-        if (!sub || sub.enabled === false) continue;
+        if (!sub) continue;
 
         if (Array.isArray(sub.sources)) result.push(...sub.sources);
     }
@@ -695,7 +700,7 @@ async function getAllManagedSources(env) {
     const subs = await listSubs(env);
 
     for (const sub of subs) {
-        if (sub.enabled === false) continue;
+        if (!sub) continue;
         if (Array.isArray(sub.sources)) result.push(...sub.sources);
     }
 
@@ -783,7 +788,8 @@ async function handleAdmin(request, env, runtime) {
                 const item = {
                     id,
                     name,
-                    enabled: data.enabled !== false,
+                    enabled: true,
+                    order: Date.now(),
                     sources,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
@@ -809,12 +815,37 @@ async function handleAdmin(request, env, runtime) {
                     ...old,
                     name,
                     sources,
-                    enabled: data.enabled !== false,
+                    enabled: true,
+                    order: Number.isFinite(Number(old.order)) ? Number(old.order) : Date.now(),
                     updatedAt: new Date().toISOString()
                 };
 
                 await env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
                 return jsonResponse({ ok: true, sub: item });
+            }
+
+            if (data.type === 'sub_reorder') {
+                const ids = Array.isArray(data.ids)
+                    ? [...new Set(data.ids.map(String).filter(Boolean))]
+                    : [];
+
+                if (!ids.length) return new Response('排序数据不能为空', { status: 400 });
+
+                const subs = await listSubs(env);
+                const byId = new Map(subs.map(item => [String(item.id), item]));
+                if (ids.length !== subs.length || ids.some(id => !byId.has(id))) {
+                    return new Response('聚合节点排序数据不完整', { status: 400 });
+                }
+
+                const now = Date.now();
+                await Promise.all(ids.map((id, index) => {
+                    const item = byId.get(id);
+                    item.order = index;
+                    item.updatedAt = new Date(now + index).toISOString();
+                    return env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
+                }));
+
+                return jsonResponse({ ok: true, ids });
             }
 
             if (data.type === 'sub_delete') {
@@ -1833,8 +1864,8 @@ ${renderToolScripts(false)}
 
 
 /* =========================================================
- * 新版管理后台
- * 保持 CF-SUB 原有视觉风格
+ * SUB-UI 管理后台
+ * 保持 CF-SUB 核心视觉与管理逻辑
  * ======================================================= */
 
 function renderAdminPage(url, env, subs, tokens, settings, status) {
@@ -1875,8 +1906,16 @@ ${getToolStyles()}
 .token-url{color:#1f4b99;word-break:break-all}
 .chip{display:inline-block;padding:3px 8px;margin:2px 3px 2px 0;border-radius:8px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}
 .check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}
-.check-item{display:flex;align-items:center;gap:8px;font-weight:400;margin:0}
+.check-item{display:flex;align-items:center;gap:8px;font-weight:400;margin:0;cursor:grab;touch-action:none;user-select:none}
 .check-item input{width:18px;height:18px}
+.sortable-item{position:relative;cursor:grab;touch-action:none;user-select:none}
+.sortable-item .drag-handle{display:inline-flex;align-items:center;justify-content:center;width:22px;min-width:22px;color:#999;font-size:18px;line-height:1;cursor:grab}
+.sortable-item.dragging{opacity:.55;transform:scale(.99);box-shadow:0 8px 22px rgba(0,0,0,.16)}
+#url-sub-list .check-item{padding:8px 10px;border:1px solid rgba(207,207,200,.45);border-radius:10px;background:rgba(250,250,250,.55)}
+#url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
+.sub-row.sortable-item{touch-action:none}
+.sub-row.sortable-item .sub-head{pointer-events:none}
+.sub-row.sortable-item .sub-head .actions{pointer-events:auto}
 .inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small-note{font-size:12px;color:#888;margin-top:6px}
 .edit-button{background:#111!important;color:#fff!important;border-color:#111!important;min-height:34px;padding:7px 14px}
@@ -1893,6 +1932,8 @@ ${getToolStyles()}
 .chip{background:rgba(100,181,246,.12);color:#90caf9}
 .check-list{background:rgba(20,20,20,.65);border-color:rgba(255,255,255,.12)}
 .check-item{color:#ddd}
+#url-sub-list .check-item{background:rgba(10,10,10,.45);border-color:rgba(255,255,255,.08)}
+.sortable-item .drag-handle{color:#777}
 .config-value{background:rgba(0,0,0,.22);border-color:rgba(255,255,255,.1);color:#ddd}
 .edit-button{background:#111!important;border-color:#444!important}
 }
@@ -1916,9 +1957,6 @@ ${getToolStyles()}
 <label>订阅地址 / 自建节点</label>
 <textarea id="sub-edit-sources" style="min-height:220px" placeholder="一行一个订阅地址或节点"></textarea>
 <div class="section-note">可以同时放订阅 URL 和自建节点。SUBS 本身不会生成公开订阅链接。</div>
-</div>
-<div class="field">
-<label><input id="sub-edit-enabled" type="checkbox" checked style="width:18px;height:18px;vertical-align:middle;margin-right:6px;">启用此聚合节点</label>
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubsModal()">取消</button>
@@ -2096,18 +2134,20 @@ ${getToolStyles()}
 
 <div id="sub-list" class="sub-grid" style="margin-top:12px;">
 ${subs.length ? subs.map(s => `
-<div class="sub-row">
+<div class="sub-row sortable-item" data-sort-id="${escapeHTML(s.id)}">
 <div class="sub-head">
+<div style="display:flex;align-items:flex-start;gap:8px;">
+<span class="drag-handle" aria-hidden="true">⠿</span>
 <div>
 <div class="sub-name">${escapeHTML(s.name)}</div>
-<div class="sub-count">${s.sources?.length || 0} 个来源 · ${s.enabled === false ? '已禁用' : '已启用'}</div>
+<div class="sub-count">${s.sources?.length || 0} 个来源 · 已启用</div>
+</div>
 </div>
 <div class="actions" style="margin-top:0;">
 <button type="button" class="edit-button" onclick="editSub('${escapeHTML(s.id)}')">编辑</button>
 <button type="button" class="danger" onclick="deleteSub('${escapeHTML(s.id)}')">删除</button>
 </div>
 </div>
-<div class="source-box">${escapeHTML((s.sources || []).join('\n'))}</div>
 </div>
 `).join('') : `<div class="empty">暂无聚合节点。SUB 默认就是空的，请点击“创建聚合节点”。</div>`}
 </div>
@@ -2205,27 +2245,27 @@ function renderSubList(){
    return;
  }
  box.innerHTML=SUBS.map(function(s){
-   const sources=escapeJS((s.sources||[]).join('\\n'));
    const name=escapeJS(s.name||'');
    const id=escapeJS(s.id||'');
    const count=s.sources?.length||0;
-   const enabled=s.enabled===false?'已禁用':'已启用';
-   return '<div class="sub-row">'
+   return '<div class="sub-row sortable-item" data-sort-id="'+id+'">'
     +'<div class="sub-head">'
+    +'<div style="display:flex;align-items:flex-start;gap:8px;">'
+    +'<span class="drag-handle" aria-hidden="true">⠿</span>'
     +'<div>'
     +'<div class="sub-name">'+name+'</div>'
-    +'<div class="sub-count">'+count+' 个来源 · '+enabled+'</div>'
+    +'<div class="sub-count">'+count+' 个来源 · 已启用</div>'
+    +'</div>'
     +'</div>'
     +'<div class="actions" style="margin-top:0;">'
-    +'<button type="button" class="edit-button" onclick="editSub(\\\''+id+'\\\')">编辑</button>'
-    +'<button type="button" class="danger" onclick="deleteSub(\\\''+id+'\\\')">删除</button>'
+    +'<button type="button" class="edit-button" onclick="editSub(\\''+id+'\\')">编辑</button>'
+    +'<button type="button" class="danger" onclick="deleteSub(\\''+id+'\\')">删除</button>'
     +'</div>'
     +'</div>'
-    +'<div class="source-box">'+sources+'</div>'
     +'</div>';
  }).join('');
+ enableLongPressSort(box,'.sub-row',saveSubOrder);
 }
-
 function renderUrlList(){
  const box=document.getElementById('url-list');
  if(!box)return;
@@ -2365,7 +2405,6 @@ function openSubCreate(){
  document.getElementById('subsModalTitle').textContent='创建聚合节点';
  document.getElementById('sub-edit-name').value='';
  document.getElementById('sub-edit-sources').value='';
- document.getElementById('sub-edit-enabled').checked=true;
  document.getElementById('subSaveStatus').textContent='';
  document.getElementById('subsModal').style.display='flex';
 }
@@ -2379,7 +2418,6 @@ function editSub(id){
  document.getElementById('subsModalTitle').textContent='编辑聚合节点';
  document.getElementById('sub-edit-name').value=item.name||'';
  document.getElementById('sub-edit-sources').value=(item.sources||[]).join('\\n');
- document.getElementById('sub-edit-enabled').checked=item.enabled!==false;
  document.getElementById('subSaveStatus').textContent='';
  document.getElementById('subsModal').style.display='flex';
 }
@@ -2393,7 +2431,7 @@ async function saveSubs(){
    id:oldId,
    name:document.getElementById('sub-edit-name').value.trim(),
    sources:document.getElementById('sub-edit-sources').value,
-   enabled:document.getElementById('sub-edit-enabled').checked
+   enabled:true
  };
 
  button.disabled=true;
@@ -2446,20 +2484,154 @@ async function deleteSub(id){
  showToast('聚合节点已删除');
 }
 
+function enableLongPressSort(container, itemSelector, onChange){
+ if(!container)return;
+ const items=()=>Array.from(container.querySelectorAll(itemSelector));
+ let dragging=null;
+ let timer=null;
+ let touchStartY=0;
+ let changed=false;
+
+ function clearTimer(){
+   if(timer){clearTimeout(timer);timer=null;}
+ }
+
+ function isInteractive(target){
+   return !!target.closest('button,input,select,textarea,a');
+ }
+
+ function finishTouch(){
+   clearTimer();
+   if(!dragging)return;
+   dragging.classList.remove('dragging');
+   dragging=null;
+   if(changed && typeof onChange==='function')onChange();
+   changed=false;
+ }
+
+ items().forEach(item=>{
+   item.draggable=true;
+
+   item.addEventListener('dragstart',function(e){
+     dragging=item;
+     changed=false;
+     item.classList.add('dragging');
+     if(e.dataTransfer){
+       e.dataTransfer.effectAllowed='move';
+       e.dataTransfer.setData('text/plain',item.dataset.sortId||'');
+     }
+   });
+
+   item.addEventListener('dragover',function(e){
+     if(!dragging || dragging===item)return;
+     e.preventDefault();
+     const rect=item.getBoundingClientRect();
+     const before=e.clientY < rect.top + rect.height/2;
+     if(before){
+       if(item.previousElementSibling!==dragging)container.insertBefore(dragging,item);
+     }else{
+       if(item.nextElementSibling!==dragging)container.insertBefore(dragging,item.nextElementSibling);
+     }
+     changed=true;
+   });
+
+   item.addEventListener('dragend',function(){
+     if(!dragging)return;
+     dragging.classList.remove('dragging');
+     dragging=null;
+     if(changed && typeof onChange==='function')onChange();
+     changed=false;
+   });
+
+   item.addEventListener('touchstart',function(e){
+     if(isInteractive(e.target))return;
+     const touch=e.touches[0];
+     if(!touch)return;
+     touchStartY=touch.clientY;
+     clearTimer();
+     timer=setTimeout(function(){
+       dragging=item;
+       item.classList.add('dragging');
+     },420);
+   },{passive:true});
+
+   item.addEventListener('touchmove',function(e){
+     const touch=e.touches[0];
+     if(!touch)return;
+     if(!dragging){
+       if(Math.abs(touch.clientY-touchStartY)>10)clearTimer();
+       return;
+     }
+     e.preventDefault();
+     const y=touch.clientY;
+     let target=null;
+     for(const other of items()){
+       if(other===dragging)continue;
+       const rect=other.getBoundingClientRect();
+       if(y < rect.top + rect.height/2){
+         target=other;
+         break;
+       }
+     }
+     if(target){
+       if(target!==dragging.nextElementSibling){
+         container.insertBefore(dragging,target);
+         changed=true;
+       }
+     }else if(container.lastElementChild!==dragging){
+       container.appendChild(dragging);
+       changed=true;
+     }
+   },{passive:false});
+
+   item.addEventListener('touchend',finishTouch,{passive:true});
+   item.addEventListener('touchcancel',finishTouch,{passive:true});
+ });
+}
+
+async function saveSubOrder(){
+ const box=document.getElementById('sub-list');
+ if(!box)return;
+ const ids=Array.from(box.querySelectorAll('.sub-row[data-sort-id]')).map(x=>x.dataset.sortId).filter(Boolean);
+ if(!ids.length)return;
+ try{
+   const res=await fetch(window.location.pathname,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({type:'sub_reorder',ids})
+   });
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'排序保存失败');
+   const byId=new Map(SUBS.map(x=>[String(x.id),x]));
+   const ordered=ids.map(id=>byId.get(String(id))).filter(Boolean);
+   SUBS.splice(0,SUBS.length,...ordered);
+   showToast('聚合节点顺序已保存');
+ }catch(err){
+   showToast(err.message||'排序保存失败');
+   renderSubList();
+ }
+}
+
 function renderUrlSubs(selected){
  const box=document.getElementById('url-sub-list');
  if(!SUBS.length){
    box.innerHTML='<div class="small-note">暂无 SUB，请先创建聚合节点。</div>';
    return;
  }
- box.innerHTML=SUBS.map(s=>\`
-   <label class="check-item">
-     <input type="checkbox" value="\${escapeJS(s.id)}" \${selected.includes(s.id)?'checked':''}>
-     <span>\${escapeJS(s.name)}</span>
-   </label>
- \`).join('');
+ const selectedSet=new Set((selected||[]).map(String));
+ const ordered=SUBS.filter(s=>selectedSet.has(String(s.id)))
+   .concat(SUBS.filter(s=>!selectedSet.has(String(s.id))));
+ box.innerHTML=ordered.map(function(s){
+   const id=escapeJS(s.id||'');
+   const checked=selectedSet.has(String(s.id))?' checked':'';
+   return '<label class="check-item sortable-item" data-sort-id="'+id+'">'
+    +'<span class="drag-handle" aria-hidden="true">⠿</span>'
+    +'<input type="checkbox" value="'+id+'"'+checked+'>'
+    +'<span>'+escapeJS(s.name||'')+'</span>'
+    +'</label>';
+ }).join('');
+ enableLongPressSort(box,'.check-item');
 }
-
 function escapeJS(value){
  return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
@@ -2493,7 +2665,10 @@ function editUrl(token){
 }
 
 async function saveUrl(){
- const selected=[...document.querySelectorAll('#url-sub-list input[type=checkbox]:checked')].map(x=>x.value);
+ const selected=[...document.querySelectorAll('#url-sub-list .check-item')].filter(item=>{
+   const input=item.querySelector('input[type=checkbox]');
+   return input && input.checked;
+ }).map(item=>item.dataset.sortId).filter(Boolean);
  const button=document.querySelector('#urlModal button:not(.secondary)');
  const status=document.getElementById('urlSaveStatus');
 
