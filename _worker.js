@@ -1913,12 +1913,28 @@ ${getToolStyles()}
 .sortable-item.dragging{opacity:.55;transform:scale(.99);box-shadow:0 8px 22px rgba(0,0,0,.16)}
 #url-sub-list .check-item{padding:8px 10px;border:1px solid rgba(207,207,200,.45);border-radius:10px;background:rgba(250,250,250,.55)}
 #url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
-.sub-row.sortable-item{touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
-.sub-row.sortable-item *{user-select:none;-webkit-user-select:none}
+.sub-row.sortable-item{
+    position:relative;
+    cursor:grab;
+    user-select:none;
+    -webkit-user-select:none;
+    -webkit-touch-callout:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:pan-y;
+}
+.sub-row.sortable-item *{
+    user-select:none;
+    -webkit-user-select:none;
+    -webkit-touch-callout:none;
+}
 .sub-row.sortable-item .sub-head{pointer-events:none}
 .sub-row.sortable-item .sub-head .actions{pointer-events:auto}
+.sub-row.sortable-item .actions,
 .sub-row.sortable-item .actions button{cursor:pointer}
-.sub-row.sortable-item.dragging{touch-action:none;cursor:grabbing}
+.sub-row.sortable-item.dragging{
+    touch-action:none;
+    cursor:grabbing;
+}
 .inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small-note{font-size:12px;color:#888;margin-top:6px}
 .edit-button{background:#111!important;color:#fff!important;border-color:#111!important;min-height:34px;padding:7px 14px}
@@ -2593,139 +2609,192 @@ function enableLongPressSort(container, itemSelector, onChange){
 }
 
 function enableSubLongPressSort(container, itemSelector, onChange){
- if(!container)return;
- const items=()=>Array.from(container.querySelectorAll(itemSelector));
- let dragging=null;
- let timer=null;
- let touchStartY=0;
- let changed=false;
- let touchActive=false;
- let suppressClickUntil=0;
+  if(!container)return;
 
- function clearTimer(){
-   if(timer){clearTimeout(timer);timer=null;}
- }
+  const items=()=>Array.from(container.querySelectorAll(itemSelector));
+  let dragging=null;
+  let timer=null;
+  let pointerId=null;
+  let startX=0;
+  let startY=0;
+  let changed=false;
+  let suppressClickUntil=0;
 
- function isInteractive(target){
-   return !!target.closest('button,a,input,select,textarea,[contenteditable="true"]');
- }
+  function clearTimer(){
+    if(timer){
+      clearTimeout(timer);
+      timer=null;
+    }
+  }
 
- function cleanup(){
-   clearTimer();
-   if(dragging)dragging.classList.remove('dragging');
-   dragging=null;
-   touchActive=false;
-   document.body.style.userSelect='';
-   document.body.style.webkitUserSelect='';
- }
+  function isInteractive(target){
+    return !!target.closest('button,a,input,select,textarea,[contenteditable="true"]');
+  }
 
- function finish(){
-   const wasDragging=!!dragging;
-   cleanup();
-   if(wasDragging && changed && typeof onChange==='function')onChange();
-   changed=false;
- }
+  function setSelectionDisabled(disabled){
+    document.body.style.userSelect=disabled?'none':'';
+    document.body.style.webkitUserSelect=disabled?'none':'';
+  }
 
- items().forEach(item=>{
-   item.draggable=true;
+  function cleanup(){
+    clearTimer();
 
-   item.addEventListener('dragstart',function(e){
-     if(isInteractive(e.target)){
-       e.preventDefault();
-       return;
-     }
-     clearTimer();
-     dragging=item;
-     changed=false;
-     item.classList.add('dragging');
-     if(e.dataTransfer){
-       e.dataTransfer.effectAllowed='move';
-       e.dataTransfer.setData('text/plain',item.dataset.sortId||'');
-     }
-   });
+    if(dragging){
+      dragging.classList.remove('dragging');
+      dragging.style.pointerEvents='';
+    }
 
-   item.addEventListener('dragover',function(e){
-     if(!dragging || dragging===item)return;
-     e.preventDefault();
-     const rect=item.getBoundingClientRect();
-     const before=e.clientY < rect.top + rect.height/2;
-     if(before){
-       if(item.previousElementSibling!==dragging)container.insertBefore(dragging,item);
-     }else{
-       if(item.nextElementSibling!==dragging)container.insertBefore(dragging,item.nextElementSibling);
-     }
-     changed=true;
-   });
+    dragging=null;
+    pointerId=null;
+    setSelectionDisabled(false);
+  }
 
-   item.addEventListener('dragend',function(){
-     if(!dragging)return;
-     const shouldSave=changed;
-     cleanup();
-     if(shouldSave && typeof onChange==='function')onChange();
-     changed=false;
-   });
+  function finish(save){
+    const shouldSave=!!dragging && !!save && changed;
+    cleanup();
 
-   item.addEventListener('touchstart',function(e){
-     if(isInteractive(e.target))return;
-     const touch=e.touches&&e.touches[0];
-     if(!touch)return;
-     touchStartY=touch.clientY;
-     touchActive=true;
-     changed=false;
-     clearTimer();
-     timer=setTimeout(function(){
-       if(!touchActive)return;
-       dragging=item;
-       item.classList.add('dragging');
-       suppressClickUntil=Date.now()+700;
-       document.body.style.userSelect='none';
-       document.body.style.webkitUserSelect='none';
-     },380);
-   },{passive:true});
+    if(shouldSave && typeof onChange==='function'){
+      onChange();
+    }
 
-   item.addEventListener('touchmove',function(e){
-     const touch=e.touches&&e.touches[0];
-     if(!touch)return;
+    changed=false;
+  }
 
-     if(!dragging){
-       if(Math.abs(touch.clientY-touchStartY)>8)clearTimer();
-       return;
-     }
+  function beginDrag(item, e){
+    if(dragging || !item)return;
 
-     e.preventDefault();
-     const y=touch.clientY;
-     let target=null;
-     for(const other of items()){
-       if(other===dragging)continue;
-       const rect=other.getBoundingClientRect();
-       if(y < rect.top + rect.height/2){
-         target=other;
-         break;
-       }
-     }
+    dragging=item;
+    changed=false;
+    suppressClickUntil=Date.now()+700;
 
-     if(target){
-       if(target!==dragging.nextElementSibling){
-         container.insertBefore(dragging,target);
-         changed=true;
-       }
-     }else if(container.lastElementChild!==dragging){
-       container.appendChild(dragging);
-       changed=true;
-     }
-   },{passive:false});
+    item.classList.add('dragging');
+    setSelectionDisabled(true);
 
-   item.addEventListener('touchend',function(){finish();},{passive:true});
-   item.addEventListener('touchcancel',function(){finish();},{passive:true});
-   item.addEventListener('contextmenu',function(e){
-     if(dragging || Date.now()<suppressClickUntil)e.preventDefault();
-   });
-   item.addEventListener('selectstart',function(e){
-     if(!isInteractive(e.target))e.preventDefault();
-   });
- });
+    try{
+      if(e && item.setPointerCapture && e.pointerId!=null){
+        item.setPointerCapture(e.pointerId);
+      }
+    }catch(_){}
+
+    if(e){
+      e.preventDefault();
+    }
+  }
+
+  function moveDrag(y){
+    if(!dragging)return;
+
+    let target=null;
+
+    for(const other of items()){
+      if(other===dragging)continue;
+
+      const rect=other.getBoundingClientRect();
+
+      if(y < rect.top + rect.height/2){
+        target=other;
+        break;
+      }
+    }
+
+    if(target){
+      if(target!==dragging.nextElementSibling){
+        container.insertBefore(dragging,target);
+        changed=true;
+      }
+    }else if(container.lastElementChild!==dragging){
+      container.appendChild(dragging);
+      changed=true;
+    }
+  }
+
+  items().forEach(item=>{
+    // 不使用原生 draggable，避免浏览器自己的拖拽/文本选择与长按排序冲突。
+    item.draggable=false;
+
+    item.addEventListener('pointerdown',function(e){
+      if(e.button!==undefined && e.button!==0)return;
+      if(isInteractive(e.target))return;
+
+      pointerId=e.pointerId;
+      startX=e.clientX;
+      startY=e.clientY;
+      changed=false;
+
+      clearTimer();
+
+      timer=setTimeout(function(){
+        if(pointerId!==e.pointerId)return;
+
+        beginDrag(item,e);
+      },320);
+    });
+
+    item.addEventListener('pointermove',function(e){
+      if(pointerId!==e.pointerId)return;
+
+      if(!dragging){
+        const dx=Math.abs(e.clientX-startX);
+        const dy=Math.abs(e.clientY-startY);
+
+        // 长按之前发生明显移动，视为页面正常滚动，不启动排序。
+        if(dx>8 || dy>8){
+          clearTimer();
+        }
+        return;
+      }
+
+      e.preventDefault();
+      moveDrag(e.clientY);
+    });
+
+    item.addEventListener('pointerup',function(e){
+      if(pointerId!==e.pointerId)return;
+
+      const wasDragging=!!dragging;
+      finish(wasDragging);
+
+      try{
+        if(item.releasePointerCapture && item.hasPointerCapture?.(e.pointerId)){
+          item.releasePointerCapture(e.pointerId);
+        }
+      }catch(_){}
+    });
+
+    item.addEventListener('pointercancel',function(e){
+      if(pointerId!==e.pointerId)return;
+      finish(false);
+    });
+
+    item.addEventListener('lostpointercapture',function(e){
+      if(pointerId!==e.pointerId)return;
+      if(dragging)finish(true);
+      else clearTimer();
+    });
+
+    item.addEventListener('contextmenu',function(e){
+      // 长按排序期间禁止系统菜单；同时彻底关闭 SUB 卡片的长按菜单。
+      if(dragging || Date.now()<suppressClickUntil){
+        e.preventDefault();
+      }
+    });
+
+    item.addEventListener('selectstart',function(e){
+      // SUB 卡片本身及其文字都不能进入浏览器文本选择。
+      if(!isInteractive(e.target)){
+        e.preventDefault();
+      }
+    });
+
+    item.addEventListener('click',function(e){
+      // 拖动结束后的松手事件不能误触发卡片内按钮。
+      if(Date.now()<suppressClickUntil){
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },true);
+  });
 }
-
 async function saveSubOrder(){
  const box=document.getElementById('sub-list');
  if(!box)return;
