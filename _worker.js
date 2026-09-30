@@ -1930,16 +1930,17 @@ function renderAdminPage(url, env, subs, tokens, settings, status) {
 ${getToolStyles()}
 .admin-shell{max-width:1100px;padding-top:0!important}.admin-header{margin:0 -28px 18px;padding:28px;border-bottom:1px solid rgba(120,130,140,.18)}
 .sub-grid{display:grid;gap:10px}.sub-row{border:1px solid rgba(229,229,223,.6);border-radius:14px;padding:14px;background:rgba(255,255,255,.5);color:inherit;box-shadow:0 3px 14px rgba(50,90,70,.04);transition:transform .2s,box-shadow .2s,border-color .2s}.sub-row:hover{transform:translateY(-1px);box-shadow:0 7px 20px rgba(50,90,70,.08)}
-.sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.sub-name{font-weight:700;font-size:15px;color:inherit}.sub-count{color:#888;font-size:12px;margin-top:3px}.source-box{margin-top:10px;padding:10px;border-radius:10px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}.token-url{color:#1f4b99;word-break:break-all}.chip{display:inline-block;padding:4px 9px;margin:2px 4px 2px 0;border-radius:9px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}.check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}.inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.small-note{font-size:12px;color:#888;margin-top:6px}.edit-button{background:#111!important;color:#fff!important;border-color:#111!important;min-height:34px;padding:7px 14px}.edit-button:hover{background:#000!important;border-color:#000!important}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.panel-head .section-title{margin-bottom:0}.config-value{margin-top:10px;padding:10px 12px;border:1px solid rgba(229,229,223,.7);border-radius:10px;background:rgba(250,250,250,.65);font-size:13px;word-break:break-all;white-space:pre-wrap}
+.sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.sub-name{font-weight:700;font-size:15px;color:inherit}.sub-count{color:#888;font-size:12px;margin-top:3px}.source-box{margin-top:10px;padding:10px;border-radius:10px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}.token-url{color:#1f4b99;word-break:break-all;margin-top:10px}.chip{display:inline-block;padding:4px 9px;margin:2px 4px 2px 0;border-radius:9px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}.check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}.inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.small-note{font-size:12px;color:#888;margin-top:6px}.edit-button{background:#fff!important;color:#222!important;border-color:#c8c8c0!important;min-height:34px;padding:7px 14px}.edit-button:hover{background:#f1f3f5!important;border-color:#bfc3c8!important}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.panel-head .section-title{margin-bottom:0}.config-value{margin-top:10px;padding:10px 12px;border:1px solid rgba(229,229,223,.7);border-radius:10px;background:rgba(250,250,250,.65);font-size:13px;word-break:break-all;white-space:pre-wrap}
 @media(max-width:600px){.inline-row{grid-template-columns:1fr}.admin-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.admin-header{margin:0 -18px 16px;padding:22px 18px 20px}.admin-header>div:last-child{width:100%;display:grid!important;grid-template-columns:1fr 1fr 1fr;gap:8px}.admin-header>div:last-child>*{width:100%}.sub-head .actions{width:100%}.sub-head .actions button{flex:1}}
 @media(prefers-color-scheme:dark){.admin-shell{background:linear-gradient(135deg,rgba(1,5,6,.98) 0%,rgba(2,10,10,.96) 48%,rgba(0,54,35,.92) 100%)}.sub-row{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.10);color:#eee}.sub-count{color:#aaa}.source-box,.config-value{background:rgba(2,6,8,.55);border-color:rgba(255,255,255,.08);color:#ddd}.token-url{color:#64b5f6}.chip{background:rgba(100,181,246,.12);color:#90caf9}.check-list{background:rgba(20,20,20,.65);border-color:rgba(255,255,255,.12)}}
 .sub-grid{display:grid;gap:10px}
 .sub-row{border:1px solid rgba(229,229,223,.6);border-radius:12px;padding:12px;background:rgba(255,255,255,.5);color:inherit}
 .sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.sub-head .actions{margin-bottom:0}
 .sub-name{font-weight:700;font-size:15px;color:inherit}
 .sub-count{color:#888;font-size:12px;margin-top:3px}
 .source-box{margin-top:9px;padding:9px;border-radius:9px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}
-.token-url{color:#1f4b99;word-break:break-all}
+.token-url{color:#1f4b99;word-break:break-all;margin-top:10px}
 .chip{display:inline-block;padding:3px 8px;margin:2px 3px 2px 0;border-radius:8px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}
 .check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}
 .check-item{display:flex;align-items:center;gap:8px;font-weight:400;margin:0;cursor:grab;touch-action:none;user-select:none}
@@ -1951,8 +1952,8 @@ ${getToolStyles()}
 #url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
 .inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small-note{font-size:12px;color:#888;margin-top:6px}
-.edit-button{background:#111!important;color:#fff!important;border-color:#111!important;min-height:34px;padding:7px 14px}
-.edit-button:hover{background:#000!important;border-color:#000!important}
+.edit-button{background:#fff!important;color:#222!important;border-color:#c8c8c0!important;min-height:34px;padding:7px 14px}
+.edit-button:hover{background:#f1f3f5!important;border-color:#bfc3c8!important}
 .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .panel-head .section-title{margin-bottom:0}
 .config-value{margin-top:10px;padding:10px 12px;border:1px solid rgba(229,229,223,.7);border-radius:10px;background:rgba(250,250,250,.65);font-size:13px;word-break:break-all;white-space:pre-wrap}
@@ -1968,7 +1969,7 @@ ${getToolStyles()}
 #url-sub-list .check-item{background:rgba(10,10,10,.45);border-color:rgba(255,255,255,.08)}
 .sortable-item .drag-handle{color:#777}
 .config-value{background:rgba(0,0,0,.22);border-color:rgba(255,255,255,.1);color:#ddd}
-.edit-button{background:#111!important;border-color:#444!important}
+.edit-button{background:#3a414a!important;color:#fff!important;border-color:#69717c!important}.edit-button:hover{background:#4b5561!important;border-color:#858f9b!important}
 }
 @media(max-width:600px){.inline-row{grid-template-columns:1fr}}
 </style>
@@ -1993,7 +1994,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubsModal()">取消</button>
-<button type="button" onclick="saveSubs()">保存</button>
+<button type="button" class="secondary" onclick="saveSubs()">保存</button>
 </div>
 <span id="subSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2023,7 +2024,7 @@ ${getToolStyles()}
 
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeUrlModal()">取消</button>
-<button type="button" onclick="saveUrl()">保存</button>
+<button type="button" class="secondary" onclick="saveUrl()">保存</button>
 </div>
 <span id="urlSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2041,7 +2042,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubApiModal()">取消</button>
-<button type="button" onclick="saveConfig(this,'subapi')">保存</button>
+<button type="button" class="secondary" onclick="saveConfig(this,'subapi')">保存</button>
 </div>
 <span id="subApiSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2058,7 +2059,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubConfigModal()">取消</button>
-<button type="button" onclick="saveConfig(this,'subconfig')">保存</button>
+<button type="button" class="secondary" onclick="saveConfig(this,'subconfig')">保存</button>
 </div>
 <span id="subConfigSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2075,7 +2076,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeNoAdsModal()">取消</button>
-<button type="button" onclick="saveConfig(this,'noads')">保存</button>
+<button type="button" class="secondary" onclick="saveConfig(this,'noads')">保存</button>
 </div>
 <span id="noAdsSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2091,7 +2092,7 @@ ${getToolStyles()}
 <div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage"><div class="section-note">只填写路径单词，不需要填写 /。修改后会立即退出后台并返回主页；例如改成 apple 后，使用 /apple 进入后台。</div></div>
 <div class="actions" style="margin-top:24px;justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSecurityModal()">取消</button>
-<button type="button" onclick="saveConfig(this,'sec')">保存修改</button>
+<button type="button" class="secondary" onclick="saveConfig(this,'sec')">保存修改</button>
 </div>
 <span id="secSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2125,7 +2126,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="margin-top:24px;justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeFakeModal()">取消</button>
-<button type="button" onclick="saveConfig(this,'fake')">保存修改</button>
+<button type="button" class="secondary" onclick="saveConfig(this,'fake')">保存修改</button>
 </div>
 <span id="fakeSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2137,9 +2138,9 @@ ${getToolStyles()}
 <h1 class="title">${escapeHTML(settings.subName)}管理面板</h1>
 </div>
 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-<button type="button" onclick="openFakeModal()">🏠 主页</button>
-<button type="button" onclick="openSecurityModal()">🛡️ 安全</button>
-<a class="button danger" href="/${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}/logout">🚪 退出</a>
+<button type="button" class="secondary" onclick="openSecurityModal()">安全</button>
+<button type="button" class="secondary" onclick="openFakeModal()">站点</button>
+<a class="button danger" href="/${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}/logout">退出</a>
 </div>
 </header>
 
@@ -2149,7 +2150,7 @@ ${getToolStyles()}
 <h2 class="section-title">全局名称设置 (SUBNAME)</h2>
 <div class="section-note">设置订阅名称，将显示在生成的订阅信息中。</div>
 </div>
-<button type="button" class="edit-button" onclick="saveConfig(this,'subname')">保存</button>
+<button type="button" class="secondary edit-button" onclick="saveConfig(this,'subname')">保存</button>
 </div>
 <div class="field" style="margin-top:12px;"><input id="config-subname" type="text" value="${escapeHTML(settings.subName)}" placeholder="例如：CF-SUBS"></div>
 <span id="configSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
@@ -2209,7 +2210,7 @@ ${tokens.length ? tokens.map(t => {
 <div class="sub-count">URL：${escapeHTML(t.url)}</div>
 </div>
 <div class="actions" style="margin-top:0;">
-<button type="button" class="secondary" onclick="copyValue('${escapeHTML(tokenUrl)}')">复制</button>
+<button type="button" onclick="copyValue('${escapeHTML(tokenUrl)}')">复制</button>
 <button type="button" class="edit-button" onclick="editUrl('${escapeHTML(t.url)}')">编辑</button>
 <button type="button" class="danger" onclick="deleteUrl('${escapeHTML(t.url)}')">删除</button>
 </div>
@@ -2322,7 +2323,7 @@ function renderUrlList(){
     +'<div class="sub-count">URL：'+path+'</div>'
     +'</div>'
     +'<div class="actions" style="margin-top:0;">'
-    +'<button type="button" class="secondary" onclick="copyValue(\\\''+safeUrl+'\\\')">复制</button>'
+    +'<button type="button" onclick="copyValue(\\\''+safeUrl+'\\\')">复制</button>'
     +'<button type="button" class="edit-button" onclick="editUrl(\\\''+path+'\\\')">编辑</button>'
     +'<button type="button" class="danger" onclick="deleteUrl(\\\''+path+'\\\')">删除</button>'
     +'</div>'
