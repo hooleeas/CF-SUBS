@@ -28,6 +28,7 @@
 
 let mytoken = 'auto';
 let FileName = 'CF-SUBS';
+let SiteLogo = '';
 let SUBUpdateTime = 6;
 let total = 99;
 let timestamp = 4102329600000;
@@ -104,6 +105,7 @@ async function handleRequest(request, env) {
                     const kvConfig = JSON.parse(kvConfigStr);
 
                     FileName = kvConfig.subName || 'CF-SUBS';
+                    SiteLogo = kvConfig.siteLogo || '';
 
                     subConverter = kvConfig.subApi || '';
                     subConfig = kvConfig.subConfig || '';
