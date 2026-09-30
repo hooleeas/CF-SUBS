@@ -1913,9 +1913,9 @@ ${getToolStyles()}
 .sortable-item.dragging{opacity:.55;transform:scale(.99);box-shadow:0 8px 22px rgba(0,0,0,.16)}
 #url-sub-list .check-item{padding:8px 10px;border:1px solid rgba(207,207,200,.45);border-radius:10px;background:rgba(250,250,250,.55)}
 #url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
-.sub-row.sortable-item{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
-.sub-row.sortable-item *{user-select:none;-webkit-user-select:none}
-.sub-row.sortable-item .actions button{cursor:pointer}
+.sub-row.sortable-item{position:relative;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
+.sub-row.sortable-item *{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.sub-row.sortable-item .actions,.sub-row.sortable-item .actions button{pointer-events:auto;cursor:pointer;touch-action:manipulation}
 .sub-row.sortable-item.dragging{touch-action:none;cursor:grabbing}
 .inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small-note{font-size:12px;color:#888;margin-top:6px}
@@ -2265,7 +2265,7 @@ function renderSubList(){
     +'</div>'
     +'</div>';
  }).join('');
- enableLongPressSort(box,'.sub-row',saveSubOrder);
+ enableSubLongPressSort(box,'.sub-row',saveSubOrder);
 }
 function renderUrlList(){
  const box=document.getElementById('url-list');
@@ -2605,7 +2605,7 @@ function enableSubLongPressSort(container, itemSelector, onChange){
  }
 
  function isInteractive(target){
-   return !!target.closest('button,a,input,select,textarea,[contenteditable="true"]');
+   return !!(target && target.closest && target.closest('button,a,input,select,textarea,[contenteditable="true"]'));
  }
 
  function cleanup(){
@@ -2622,6 +2622,28 @@ function enableSubLongPressSort(container, itemSelector, onChange){
    cleanup();
    if(wasDragging && changed && typeof onChange==='function')onChange();
    changed=false;
+ }
+
+ function moveByY(y){
+   if(!dragging)return;
+   let target=null;
+   for(const other of items()){
+     if(other===dragging)continue;
+     const rect=other.getBoundingClientRect();
+     if(y < rect.top + rect.height/2){
+       target=other;
+       break;
+     }
+   }
+   if(target){
+     if(target!==dragging.nextElementSibling){
+       container.insertBefore(dragging,target);
+       changed=true;
+     }
+   }else if(container.lastElementChild!==dragging){
+     container.appendChild(dragging);
+     changed=true;
+   }
  }
 
  items().forEach(item=>{
@@ -2645,14 +2667,12 @@ function enableSubLongPressSort(container, itemSelector, onChange){
    item.addEventListener('dragover',function(e){
      if(!dragging || dragging===item)return;
      e.preventDefault();
-     const rect=item.getBoundingClientRect();
-     const before=e.clientY < rect.top + rect.height/2;
-     if(before){
-       if(item.previousElementSibling!==dragging)container.insertBefore(dragging,item);
-     }else{
-       if(item.nextElementSibling!==dragging)container.insertBefore(dragging,item.nextElementSibling);
-     }
-     changed=true;
+     moveByY(e.clientY);
+   });
+
+   item.addEventListener('drop',function(e){
+     if(!dragging)return;
+     e.preventDefault();
    });
 
    item.addEventListener('dragend',function(){
@@ -2663,10 +2683,14 @@ function enableSubLongPressSort(container, itemSelector, onChange){
      changed=false;
    });
 
+   // iOS/iPadOS/Safari: long-press anywhere on the SUB card except buttons/links,
+   // then drag by the finger. Prevent default immediately so Safari cannot start
+   // text selection or page scrolling instead of the sort gesture.
    item.addEventListener('touchstart',function(e){
      if(isInteractive(e.target))return;
      const touch=e.touches&&e.touches[0];
      if(!touch)return;
+     e.preventDefault();
      touchStartY=touch.clientY;
      touchActive=true;
      changed=false;
@@ -2675,49 +2699,38 @@ function enableSubLongPressSort(container, itemSelector, onChange){
        if(!touchActive)return;
        dragging=item;
        item.classList.add('dragging');
-       suppressClickUntil=Date.now()+700;
+       suppressClickUntil=Date.now()+900;
        document.body.style.userSelect='none';
        document.body.style.webkitUserSelect='none';
-     },380);
-   },{passive:true});
+     },350);
+   },{passive:false});
 
    item.addEventListener('touchmove',function(e){
      const touch=e.touches&&e.touches[0];
      if(!touch)return;
-
      if(!dragging){
        if(Math.abs(touch.clientY-touchStartY)>8)clearTimer();
        return;
      }
-
      e.preventDefault();
-     const y=touch.clientY;
-     let target=null;
-     for(const other of items()){
-       if(other===dragging)continue;
-       const rect=other.getBoundingClientRect();
-       if(y < rect.top + rect.height/2){
-         target=other;
-         break;
-       }
-     }
-
-     if(target){
-       if(target!==dragging.nextElementSibling){
-         container.insertBefore(dragging,target);
-         changed=true;
-       }
-     }else if(container.lastElementChild!==dragging){
-       container.appendChild(dragging);
-       changed=true;
-     }
+     moveByY(touch.clientY);
    },{passive:false});
 
-   item.addEventListener('touchend',function(){finish();},{passive:true});
-   item.addEventListener('touchcancel',function(){finish();},{passive:true});
+   item.addEventListener('touchend',function(){
+     if(!touchActive)return;
+     finish();
+   },{passive:false});
+
+   item.addEventListener('touchcancel',function(){
+     if(!touchActive)return;
+     cleanup();
+     changed=false;
+   },{passive:false});
+
    item.addEventListener('contextmenu',function(e){
      if(dragging || Date.now()<suppressClickUntil)e.preventDefault();
    });
+
    item.addEventListener('selectstart',function(e){
      if(!isInteractive(e.target))e.preventDefault();
    });
