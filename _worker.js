@@ -91,6 +91,7 @@ async function handleRequest(request, env) {
         let adminUser = env.USER || '';
         let adminPass = env.PASS || '';
         let adminPath = DEFAULT_ADMIN_PATH;
+        let siteLogo = '';
 
         fakeUrl = env.URL || '';
         fakeUrl302 = env.URL302 || '';
@@ -104,6 +105,7 @@ async function handleRequest(request, env) {
                     const kvConfig = JSON.parse(kvConfigStr);
 
                     FileName = kvConfig.subName || 'CF-SUBS';
+                    siteLogo = String(kvConfig.siteLogo || '').trim();
 
                     subConverter = kvConfig.subApi || '';
                     subConfig = kvConfig.subConfig || '';
@@ -313,7 +315,8 @@ async function handleRequest(request, env) {
                     renderGuestPage(
                         url,
                         tokenData.url,
-                        tokenData.name
+                        tokenData.name,
+                        siteLogo
                     ),
                     { headers: { 'Content-Type': 'text/html;charset=utf-8' } }
                 );
@@ -1852,14 +1855,14 @@ function getSubscriptionLinks(url, token) {
     ];
 }
 
-function renderGuestPage(url, guest, guestName = '') {
+function renderGuestPage(url, guest, guestName = '', siteLogo = '') {
     const links = getSubscriptionLinks(url, guest);
     return `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHTML(guestName || '聚合订阅链接')}</title>${SiteLogo?`<link rel="icon" href="${escapeHTML(SiteLogo)}">`:''}
+<title>${escapeHTML(guestName || '聚合订阅链接')}</title>${siteLogo?`<link rel="icon" href="${escapeHTML(siteLogo)}">`:''}
 <style>
 ${getSubUIStyles()}
 .guest-shell{max-width:1100px;padding-top:0!important}.guest-header{margin:0 -28px 18px;padding:28px;border-bottom:1px solid rgba(120,130,140,.18)}
