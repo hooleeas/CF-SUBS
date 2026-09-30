@@ -1633,6 +1633,8 @@ function getToolStyles() {
             button.secondary:hover { background: #4b5561; border-color: #858f9b; }
             button.danger { background: #b8323f; color: #fff; border-color: #d24b58; }
             button.danger:hover { background: #d13e4d; border-color: #e16a75; }
+            .save-button,.save-button.secondary,.save-button.edit-button { background:#2f3338!important; color:#fff!important; border-color:#343a40!important; }
+            .save-button:hover,.save-button.secondary:hover,.save-button.edit-button:hover { background:#1f2327!important; color:#fff!important; border-color:#343a40!important; }
             .status-ok { background: rgba(129, 199, 132, 0.1); color: #81c784; border-color: rgba(129, 199, 132, 0.2); }
             .status-warn { background: rgba(255, 183, 77, 0.1); color: #ffb74d; border-color: rgba(255, 183, 77, 0.2); }
             .status-error { background: rgba(229, 115, 115, 0.1); color: #e57373; border-color: rgba(229, 115, 115, 0.2); }
@@ -1730,7 +1732,7 @@ function renderToolScripts(includeEditor = false) {
                     settings: {
                         user: document.getElementById('sec-user') ? document.getElementById('sec-user').value : '',
                         pass: secPass,
-                        adminPath: document.getElementById('sec-admin-path') ? document.getElementById('sec-admin-path').value : 'admin',
+                        adminPath: document.getElementById('site-admin-path') ? document.getElementById('site-admin-path').value : 'admin',
                         subName: document.getElementById('config-subname') ? document.getElementById('config-subname').value : '',
                         subApi: document.getElementById('config-subapi') ? document.getElementById('config-subapi').value : '',
                         subConfig: document.getElementById('config-subconfig') ? document.getElementById('config-subconfig').value : '',
@@ -1954,6 +1956,8 @@ ${getToolStyles()}
 .small-note{font-size:12px;color:#888;margin-top:6px}
 .edit-button{background:#fff!important;color:#222!important;border-color:#c8c8c0!important;min-height:34px;padding:7px 14px}
 .edit-button:hover{background:#f1f3f5!important;border-color:#bfc3c8!important}
+.save-button,.save-button.secondary,.save-button.edit-button{background:#2f3338!important;color:#fff!important;border-color:#343a40!important}
+.save-button:hover,.save-button.secondary:hover,.save-button.edit-button:hover{background:#1f2327!important;color:#fff!important;border-color:#343a40!important;box-shadow:0 4px 12px rgba(34,34,34,.15)}
 .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .panel-head .section-title{margin-bottom:0}
 .config-value{margin-top:10px;padding:10px 12px;border:1px solid rgba(229,229,223,.7);border-radius:10px;background:rgba(250,250,250,.65);font-size:13px;word-break:break-all;white-space:pre-wrap}
@@ -1994,7 +1998,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubsModal()">取消</button>
-<button type="button" class="secondary" onclick="saveSubs()">保存</button>
+<button type="button" class="save-button" onclick="saveSubs()">保存</button>
 </div>
 <span id="subSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2024,7 +2028,7 @@ ${getToolStyles()}
 
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeUrlModal()">取消</button>
-<button type="button" class="secondary" onclick="saveUrl()">保存</button>
+<button type="button" class="save-button" onclick="saveUrl()">保存</button>
 </div>
 <span id="urlSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2042,7 +2046,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubApiModal()">取消</button>
-<button type="button" class="secondary" onclick="saveConfig(this,'subapi')">保存</button>
+<button type="button" class="save-button" onclick="saveConfig(this,'subapi')">保存</button>
 </div>
 <span id="subApiSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2059,7 +2063,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubConfigModal()">取消</button>
-<button type="button" class="secondary" onclick="saveConfig(this,'subconfig')">保存</button>
+<button type="button" class="save-button" onclick="saveConfig(this,'subconfig')">保存</button>
 </div>
 <span id="subConfigSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2076,7 +2080,7 @@ ${getToolStyles()}
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeNoAdsModal()">取消</button>
-<button type="button" class="secondary" onclick="saveConfig(this,'noads')">保存</button>
+<button type="button" class="save-button" onclick="saveConfig(this,'noads')">保存</button>
 </div>
 <span id="noAdsSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2085,23 +2089,22 @@ ${getToolStyles()}
 <!-- 安全设置 Modal -->
 <div id="securityModal" class="modal-overlay">
 <div class="modal-content">
-<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🛡️ 账户与安全设置</h2>
+<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">安全设置</h2>
 <div class="field"><label>后台登录账号 (USER)</label><input id="sec-user" type="text" value="${escapeHTML(settings.user || '')}" placeholder="例如：admin"></div>
 <div class="field"><label>后台登录密码 (PASS)</label><input id="sec-pass" type="password" value="" placeholder="留空则不修改当前密码"></div>
 <div class="field"><label>确认登录密码</label><input id="sec-pass2" type="password" value="" placeholder="留空则不修改当前密码"></div>
-<div class="field"><label>管理员后台路径</label><input id="sec-admin-path" type="text" value="${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage"><div class="section-note">只填写路径单词，不需要填写 /。修改后会立即退出后台并返回主页；例如改成 apple 后，使用 /apple 进入后台。</div></div>
 <div class="actions" style="margin-top:24px;justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSecurityModal()">取消</button>
-<button type="button" class="secondary" onclick="saveConfig(this,'sec')">保存修改</button>
+<button type="button" class="save-button" onclick="saveConfig(this,'sec')">保存修改</button>
 </div>
 <span id="secSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
-<!-- 主页设置 Modal -->
+<!-- 站点设置 Modal -->
 <div id="fakeModal" class="modal-overlay">
 <div class="modal-content">
-<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">🏠 主页设置</h2>
+<h2 class="section-title" style="font-size:20px;margin-bottom:20px;">站点设置</h2>
 <div class="status-indicator ${fakeStatusCss}" style="margin-bottom:16px;">${fakeStatusHtml}</div>
 <div class="field">
 <label>主页模式</label>
@@ -2124,9 +2127,14 @@ ${getToolStyles()}
 <label>自定义 HTML 代码 (CODE)</label>
 <textarea id="fake-code" style="min-height:180px" placeholder="在此粘贴网页 HTML 代码...">${escapeHTML(settings.fakeCode || '')}</textarea>
 </div>
+<div class="field">
+<label>管理员后台路径</label>
+<input id="site-admin-path" type="text" value="${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage">
+<div class="section-note">只填写路径单词，不需要填写 /。修改后会立即退出后台并返回主页；例如改成 apple 后，使用 /apple 进入后台。</div>
+</div>
 <div class="actions" style="margin-top:24px;justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeFakeModal()">取消</button>
-<button type="button" class="secondary" onclick="saveConfig(this,'fake')">保存修改</button>
+<button type="button" class="save-button" onclick="saveConfig(this,'fake')">保存修改</button>
 </div>
 <span id="fakeSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
@@ -2150,7 +2158,7 @@ ${getToolStyles()}
 <h2 class="section-title">全局名称设置 (SUBNAME)</h2>
 <div class="section-note">设置订阅名称，将显示在生成的订阅信息中。</div>
 </div>
-<button type="button" class="secondary edit-button" onclick="saveConfig(this,'subname')">保存</button>
+<button type="button" class="save-button" onclick="saveConfig(this,'subname')">保存</button>
 </div>
 <div class="field" style="margin-top:12px;"><input id="config-subname" type="text" value="${escapeHTML(settings.subName)}" placeholder="例如：CF-SUBS"></div>
 <span id="configSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
@@ -2379,6 +2387,9 @@ function saveConfig(button,type){
 
  const secPass=document.getElementById('sec-pass')?.value||'';
  const secPass2=document.getElementById('sec-pass2')?.value||'';
+ const siteAdminPath=(document.getElementById('site-admin-path')?.value||'admin').trim().replace(/^\/+|\/+$/g,'')||'admin';
+ const currentAdminPath=window.location.pathname.replace(/^\/+|\/+$/g,'');
+ const adminPathChanged=(isSec||isFake) && siteAdminPath!==currentAdminPath;
 
  if(isSec && secPass!==secPass2){
    alert('两次输入的密码不一致！');
@@ -2405,7 +2416,7 @@ function saveConfig(button,type){
        fakeUrl:document.getElementById('fake-url')?.value||'',
        fakeUrl302:document.getElementById('fake-url302')?.value||'',
        fakeCode:document.getElementById('fake-code')?.value||'',
-       adminPath:document.getElementById('sec-admin-path')?.value||'admin'
+       adminPath:siteAdminPath
      }
    })
  }).then(async res=>{
@@ -2416,7 +2427,7 @@ function saveConfig(button,type){
    if(type==='subapi')closeSubApiModal();
    if(type==='subconfig')closeSubConfigModal();
    if(type==='noads')closeNoAdsModal();
-   if(isSec && data.adminPath){
+   if(adminPathChanged && data.adminPath){
      setTimeout(()=>window.location.replace('/'),300);
    }else{
      setTimeout(()=>location.reload(),500);
@@ -2747,6 +2758,14 @@ async function deleteUrl(token){
  renderUrlList();
  showToast('订阅链接已删除');
 }
+
+document.querySelectorAll('.modal-overlay').forEach(function(modal){
+ if(modal.dataset.overlayDismissBound==='1')return;
+ modal.dataset.overlayDismissBound='1';
+ modal.addEventListener('click',function(event){
+   if(event.target===modal){modal.style.display='none';}
+ });
+});
 
 switchFakeMode();
 </script>
