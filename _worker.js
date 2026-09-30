@@ -1913,9 +1913,10 @@ ${getToolStyles()}
 .sortable-item.dragging{opacity:.55;transform:scale(.99);box-shadow:0 8px 22px rgba(0,0,0,.16)}
 #url-sub-list .check-item{padding:8px 10px;border:1px solid rgba(207,207,200,.45);border-radius:10px;background:rgba(250,250,250,.55)}
 #url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
-.sub-row.sortable-item{position:relative;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
-.sub-row.sortable-item *{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-.sub-row.sortable-item .actions,.sub-row.sortable-item .actions button{pointer-events:auto;cursor:pointer;touch-action:manipulation}
+.sub-row.sortable-item{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
+.sub-row.sortable-item *{user-select:none;-webkit-user-select:none}
+.sub-row.sortable-item .actions{pointer-events:auto}
+.sub-row.sortable-item .actions button{cursor:pointer}
 .sub-row.sortable-item.dragging{touch-action:none;cursor:grabbing}
 .inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small-note{font-size:12px;color:#888;margin-top:6px}
@@ -2265,7 +2266,7 @@ function renderSubList(){
     +'</div>'
     +'</div>';
  }).join('');
- enableSubLongPressSort(box,'.sub-row',saveSubOrder);
+ initSubDragSort(box,'.sub-row',saveSubOrder);
 }
 function renderUrlList(){
  const box=document.getElementById('url-list');
@@ -2590,72 +2591,93 @@ function enableLongPressSort(container, itemSelector, onChange){
  });
 }
 
-function enableSubLongPressSort(container, itemSelector, onChange){
+function initSubDragSort(container, itemSelector, onChange){
  if(!container)return;
- const items=()=>Array.from(container.querySelectorAll(itemSelector));
- let dragging=null;
+
+ // 彻底重构 SUB 主列表拖动：统一在 document 捕获层接管触摸事件。
+ // 不依赖子元素自己的 touchstart，避免 Safari 因子元素/按钮/CSS 导致事件失效。
+ const getItems=()=>Array.from(container.querySelectorAll(itemSelector));
+ let activeItem=null;
  let timer=null;
- let touchStartY=0;
- let changed=false;
+ let startY=0;
+ let startX=0;
  let touchActive=false;
- let suppressClickUntil=0;
+ let dragging=false;
+ let changed=false;
+ let suppressUntil=0;
 
  function clearTimer(){
    if(timer){clearTimeout(timer);timer=null;}
  }
 
- function isInteractive(target){
+ function interactive(target){
    return !!(target && target.closest && target.closest('button,a,input,select,textarea,[contenteditable="true"]'));
  }
 
- function cleanup(){
+ function clearVisual(){
+   getItems().forEach(function(item){item.classList.remove('drag-over');});
+   if(activeItem)activeItem.classList.remove('dragging');
+ }
+
+ function cleanup(save){
    clearTimer();
-   if(dragging)dragging.classList.remove('dragging');
-   dragging=null;
+   const shouldSave=!!(save && dragging && changed);
+   clearVisual();
+   activeItem=null;
    touchActive=false;
+   dragging=false;
+   changed=false;
    document.body.style.userSelect='';
    document.body.style.webkitUserSelect='';
+   document.body.style.webkitTouchCallout='';
+   if(shouldSave && typeof onChange==='function')onChange();
  }
 
- function finish(){
-   const wasDragging=!!dragging;
-   cleanup();
-   if(wasDragging && changed && typeof onChange==='function')onChange();
-   changed=false;
+ function activate(){
+   if(!touchActive || !activeItem)return;
+   dragging=true;
+   activeItem.classList.add('dragging');
+   suppressUntil=Date.now()+900;
+   document.body.style.userSelect='none';
+   document.body.style.webkitUserSelect='none';
+   document.body.style.webkitTouchCallout='none';
  }
 
- function moveByY(y){
-   if(!dragging)return;
+ function move(y){
+   if(!dragging || !activeItem)return;
    let target=null;
-   for(const other of items()){
-     if(other===dragging)continue;
-     const rect=other.getBoundingClientRect();
-     if(y < rect.top + rect.height/2){
-       target=other;
-       break;
-     }
+   const items=getItems();
+   for(const item of items){
+     if(item===activeItem)continue;
+     const rect=item.getBoundingClientRect();
+     if(y < rect.top + rect.height/2){target=item;break;}
    }
    if(target){
-     if(target!==dragging.nextElementSibling){
-       container.insertBefore(dragging,target);
+     if(target!==activeItem.nextElementSibling){
+       container.insertBefore(activeItem,target);
        changed=true;
      }
-   }else if(container.lastElementChild!==dragging){
-     container.appendChild(dragging);
+   }else if(container.lastElementChild!==activeItem){
+     container.appendChild(activeItem);
      changed=true;
    }
  }
 
- items().forEach(item=>{
+ // 桌面端：原生 HTML5 拖动，完全避开按钮。
+ getItems().forEach(function(item){
    item.draggable=true;
+   item.style.userSelect='none';
+   item.style.webkitUserSelect='none';
+   item.style.webkitTouchCallout='none';
+   item.style.touchAction='none';
 
    item.addEventListener('dragstart',function(e){
-     if(isInteractive(e.target)){
+     if(interactive(e.target)){
        e.preventDefault();
        return;
      }
-     clearTimer();
-     dragging=item;
+     activeItem=item;
+     dragging=true;
      changed=false;
      item.classList.add('dragging');
      if(e.dataTransfer){
@@ -2663,78 +2685,72 @@ function enableSubLongPressSort(container, itemSelector, onChange){
        e.dataTransfer.setData('text/plain',item.dataset.sortId||'');
      }
    });
-
    item.addEventListener('dragover',function(e){
-     if(!dragging || dragging===item)return;
+     if(!dragging || activeItem!==item && !activeItem)return;
+     if(!activeItem || activeItem===item)return;
      e.preventDefault();
-     moveByY(e.clientY);
-   });
-
-   item.addEventListener('drop',function(e){
-     if(!dragging)return;
-     e.preventDefault();
-   });
-
-   item.addEventListener('dragend',function(){
-     if(!dragging)return;
-     const shouldSave=changed;
-     cleanup();
-     if(shouldSave && typeof onChange==='function')onChange();
-     changed=false;
-   });
-
-   // iOS/iPadOS/Safari: long-press anywhere on the SUB card except buttons/links,
-   // then drag by the finger. Prevent default immediately so Safari cannot start
-   // text selection or page scrolling instead of the sort gesture.
-   item.addEventListener('touchstart',function(e){
-     if(isInteractive(e.target))return;
-     const touch=e.touches&&e.touches[0];
-     if(!touch)return;
-     e.preventDefault();
-     touchStartY=touch.clientY;
-     touchActive=true;
-     changed=false;
-     clearTimer();
-     timer=setTimeout(function(){
-       if(!touchActive)return;
-       dragging=item;
-       item.classList.add('dragging');
-       suppressClickUntil=Date.now()+900;
-       document.body.style.userSelect='none';
-       document.body.style.webkitUserSelect='none';
-     },350);
-   },{passive:false});
-
-   item.addEventListener('touchmove',function(e){
-     const touch=e.touches&&e.touches[0];
-     if(!touch)return;
-     if(!dragging){
-       if(Math.abs(touch.clientY-touchStartY)>8)clearTimer();
-       return;
+     const rect=item.getBoundingClientRect();
+     const before=e.clientY < rect.top + rect.height/2;
+     if(before){
+       if(item.previousElementSibling!==activeItem)container.insertBefore(activeItem,item);
+     }else{
+       if(item.nextElementSibling!==activeItem)container.insertBefore(activeItem,item.nextElementSibling);
      }
-     e.preventDefault();
-     moveByY(touch.clientY);
-   },{passive:false});
-
-   item.addEventListener('touchend',function(){
-     if(!touchActive)return;
-     finish();
-   },{passive:false});
-
-   item.addEventListener('touchcancel',function(){
-     if(!touchActive)return;
-     cleanup();
-     changed=false;
-   },{passive:false});
-
-   item.addEventListener('contextmenu',function(e){
-     if(dragging || Date.now()<suppressClickUntil)e.preventDefault();
+     changed=true;
    });
-
-   item.addEventListener('selectstart',function(e){
-     if(!isInteractive(e.target))e.preventDefault();
-   });
+   item.addEventListener('dragend',function(){cleanup(true);});
  });
+
+ // 移动端：document 捕获层 + 长按启动。这样 SUB 内任何非按钮区域都可以拖动。
+ function onTouchStart(e){
+   if(!e.touches || e.touches.length!==1)return;
+   const target=e.target;
+   if(interactive(target))return;
+   const item=target && target.closest ? target.closest(itemSelector) : null;
+   if(!item || !container.contains(item))return;
+
+   cleanup(false);
+   const touch=e.touches[0];
+   activeItem=item;
+   startY=touch.clientY;
+   startX=touch.clientX;
+   touchActive=true;
+   dragging=false;
+   changed=false;
+   clearTimer();
+   timer=setTimeout(activate,350);
+ }
+
+ function onTouchMove(e){
+   if(!touchActive || !activeItem || !e.touches || !e.touches[0])return;
+   const touch=e.touches[0];
+   const dy=Math.abs(touch.clientY-startY);
+   const dx=Math.abs(touch.clientX-startX);
+
+   if(!dragging){
+     if(dy>8 || dx>8)clearTimer();
+     return;
+   }
+
+   if(e.cancelable)e.preventDefault();
+   move(touch.clientY);
+ }
+
+ function onTouchEnd(){
+   if(!touchActive)return;
+   cleanup(true);
+ }
+
+ document.addEventListener('touchstart',onTouchStart,{capture:true,passive:true});
+ document.addEventListener('touchmove',onTouchMove,{capture:true,passive:false});
+ document.addEventListener('touchend',onTouchEnd,{capture:true,passive:true});
+ document.addEventListener('touchcancel',function(){cleanup(false);},{capture:true,passive:true});
+ document.addEventListener('contextmenu',function(e){
+   if(dragging || Date.now()<suppressUntil)e.preventDefault();
+ },{capture:true});
+ document.addEventListener('selectstart',function(e){
+   if(dragging && activeItem && activeItem.contains(e.target))e.preventDefault();
+ },{capture:true});
 }
 
 async function saveSubOrder(){
