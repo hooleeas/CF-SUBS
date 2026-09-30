@@ -1864,23 +1864,23 @@ function renderGuestPage(url, guest, guestName = '', siteLogo = '') {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHTML(guestName || '聚合订阅链接')}</title>${siteLogo?`<link rel="icon" href="${escapeHTML(siteLogo)}">`:''}
+<title>${escapeHTML(guestName ? `${guestName} 聚合订阅` : '聚合订阅')}</title>${siteLogo?`<link rel="icon" href="${escapeHTML(siteLogo)}">`:''}
 <style>
 ${getSubUIStyles()}
 .guest-shell{max-width:1100px;padding-top:0!important}.guest-header{margin:0 -28px 18px;padding:28px;border-bottom:1px solid rgba(120,130,140,.18)}
 .guest-link-list{display:grid;gap:10px}.guest-link-item{position:relative;padding:12px;border:1px solid rgba(229,229,223,.6);border-radius:12px;background:rgba(255,255,255,.5)}
 .guest-link-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:30px;margin-bottom:14px}.guest-link-label{font-weight:700;word-break:break-word;padding-right:90px}
-.guest-link-url{display:block;width:100%;box-sizing:border-box;padding:10px 12px;margin-top:14px;border:1px solid rgba(229,229,223,.8);border-radius:9px;background:rgba(250,250,250,.7);color:#1f4b99;text-decoration:none;word-break:break-all;overflow-wrap:anywhere}
+.guest-link-url{display:block;width:100%;box-sizing:border-box;padding:10px 12px;margin-top:14px;border:1px solid rgba(229,229,223,.8);border-radius:9px;background:rgba(250,250,250,.7);color:#1f4b99;text-decoration:none;word-break:break-all;overflow-wrap:anywhere;transition:all .3s ease}.guest-link-url:hover{background:rgba(31,75,153,.05);border-color:#1f4b99}
 .guest-actions{position:absolute;top:12px;right:12px;display:flex;gap:8px;align-items:center;justify-content:flex-end}.guest-actions button{margin:0}.guest-copy-btn,.guest-hide-btn{min-width:56px;width:auto;height:30px;min-height:30px;padding:0 10px;flex:0 0 auto}.guest-hide-btn{display:none}.guest-qrcode{display:none;background:#fff;border-radius:12px;padding:12px;margin:14px auto 0;width:max-content;max-width:100%;box-shadow:0 8px 24px rgba(0,0,0,.08)}
-@media(max-width:640px){.guest-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.guest-header{margin:0 -18px 16px;padding:22px 18px 20px}.guest-header .title{font-size:40px}}
-@media(prefers-color-scheme:dark){.guest-link-item{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.10)}.guest-link-url{background:rgba(2,6,8,.82);border-color:rgba(255,255,255,.12);color:#64b5f6}}
+@media(max-width:640px){.guest-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.guest-header{margin:0 -18px 16px;padding:22px 18px 20px}.guest-header .title{font-size:34px}}
+@media(prefers-color-scheme:dark){.guest-link-item{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.10)}.guest-link-url{background:rgba(2,6,8,.82);border-color:rgba(255,255,255,.12);color:#64b5f6}.guest-link-url:hover{background:rgba(100,181,246,.1);border-color:#64b5f6}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@keeex/qrcodejs-kx@1.0.2/qrcode.min.js"></script>
 </head>
 <body>
 <div id="copyNotice" class="toast"></div>
 <main class="page app-shell guest-shell">
-<header class="header guest-header"><h1 class="title">聚合订阅链接</h1><div class="subtitle">${escapeHTML(guestName || FileName)} · 复制订阅链接即可使用，也可以生成二维码</div></header>
+<header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">复制订阅链接可同时生成二维码</div></header>
 <section class="panel"><h2 class="section-title">订阅地址</h2><div class="guest-link-list">
 ${links.map(([label,value])=>`<div class="guest-link-item"><div class="guest-link-head"><div class="guest-link-label">${escapeHTML(label)}</div></div><a class="guest-link-url" href="${escapeHTML(value)}" target="_blank" rel="noopener">${escapeHTML(value)}</a><div class="guest-actions"><button type="button" class="button guest-copy-btn" data-url="${escapeHTML(value)}" onclick="copyGuest(this)">复制</button><button type="button" class="button secondary guest-hide-btn" onclick="hideGuestQr(this)" style="display:none">隐藏二维码</button></div><div class="guest-qrcode"></div></div>`).join('')}
 </div></section>
