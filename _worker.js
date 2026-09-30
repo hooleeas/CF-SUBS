@@ -1,5 +1,5 @@
 /**
- * CF-SUBS
+ * SUB-UI
  * 基于 CF-SUB 核心能力扩展的多 SUB / 多订阅链接 URL 管理版
  *
  * 核心原则：
@@ -57,7 +57,6 @@ let fakeCode = '';
 // ==============================================
 
 const SUB_PREFIX = 'SUB:';
-const SUB_ORDER_KEY = 'SUB_ORDER.json';
 const URL_PREFIX = 'URL:';
 const ID_CHARS = 'ABCDEFGHJKMNPQRSTWXYZabcdefghijkmnpqrstwxyz2345678';
 const DEFAULT_ADMIN_PATH = 'admin';
@@ -562,16 +561,6 @@ async function getToken(env, token) {
     }
 }
 
-async function getSubOrder(env) {
-    if (!env.KV) return [];
-    try {
-        const raw = await env.KV.get(SUB_ORDER_KEY, 'json');
-        return Array.isArray(raw) ? raw.map(String) : [];
-    } catch (e) {
-        return [];
-    }
-}
-
 async function listSubs(env) {
     if (!env.KV) return [];
     const result = [];
@@ -593,17 +582,10 @@ async function listSubs(env) {
         cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
 
-    let order = [];
-    try {
-        const rawOrder = await env.KV.get(SUB_ORDER_KEY, 'json');
-        if (Array.isArray(rawOrder)) order = rawOrder.map(String);
-    } catch (e) {}
-
-    const position = new Map(order.map((id, index) => [id, index]));
     result.sort((a, b) => {
-        const pa = position.has(a.id) ? position.get(a.id) : Number.MAX_SAFE_INTEGER;
-        const pb = position.has(b.id) ? position.get(b.id) : Number.MAX_SAFE_INTEGER;
-        if (pa !== pb) return pa - pb;
+        const ao = Number.isFinite(Number(a.order)) ? Number(a.order) : (Date.parse(a.createdAt || '') || 0);
+        const bo = Number.isFinite(Number(b.order)) ? Number(b.order) : (Date.parse(b.createdAt || '') || 0);
+        if (ao !== bo) return ao - bo;
         return String(a.name).localeCompare(String(b.name), 'zh-CN');
     });
     return result;
@@ -705,7 +687,7 @@ async function getSourcesForToken(env, tokenData) {
 
     for (const id of ids) {
         const sub = await getSub(env, id);
-        if (!sub || sub.enabled === false) continue;
+        if (!sub) continue;
 
         if (Array.isArray(sub.sources)) result.push(...sub.sources);
     }
@@ -718,7 +700,7 @@ async function getAllManagedSources(env) {
     const subs = await listSubs(env);
 
     for (const sub of subs) {
-        if (sub.enabled === false) continue;
+        if (!sub) continue;
         if (Array.isArray(sub.sources)) result.push(...sub.sources);
     }
 
@@ -807,17 +789,13 @@ async function handleAdmin(request, env, runtime) {
                     id,
                     name,
                     enabled: true,
+                    order: Date.now(),
                     sources,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
 
                 await env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
-
-                const currentOrder = await getSubOrder(env);
-                currentOrder.push(id);
-                await env.KV.put(SUB_ORDER_KEY, JSON.stringify(currentOrder));
-
                 return jsonResponse({ ok: true, sub: item });
             }
 
@@ -838,6 +816,7 @@ async function handleAdmin(request, env, runtime) {
                     name,
                     sources,
                     enabled: true,
+                    order: Number.isFinite(Number(old.order)) ? Number(old.order) : Date.now(),
                     updatedAt: new Date().toISOString()
                 };
 
@@ -846,17 +825,27 @@ async function handleAdmin(request, env, runtime) {
             }
 
             if (data.type === 'sub_reorder') {
-                const requested = Array.isArray(data.order)
-                    ? [...new Set(data.order.map(String))]
+                const ids = Array.isArray(data.ids)
+                    ? [...new Set(data.ids.map(String).filter(Boolean))]
                     : [];
-                const existing = await listSubs(env);
-                const existingIds = new Set(existing.map(x => x.id));
-                const validOrder = requested.filter(id => existingIds.has(id));
-                const missing = existing.filter(x => !validOrder.includes(x.id)).map(x => x.id);
-                const finalOrder = [...validOrder, ...missing];
 
-                await env.KV.put(SUB_ORDER_KEY, JSON.stringify(finalOrder));
-                return jsonResponse({ ok: true, order: finalOrder });
+                if (!ids.length) return new Response('排序数据不能为空', { status: 400 });
+
+                const subs = await listSubs(env);
+                const byId = new Map(subs.map(item => [String(item.id), item]));
+                if (ids.length !== subs.length || ids.some(id => !byId.has(id))) {
+                    return new Response('聚合节点排序数据不完整', { status: 400 });
+                }
+
+                const now = Date.now();
+                await Promise.all(ids.map((id, index) => {
+                    const item = byId.get(id);
+                    item.order = index;
+                    item.updatedAt = new Date(now + index).toISOString();
+                    return env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
+                }));
+
+                return jsonResponse({ ok: true, ids });
             }
 
             if (data.type === 'sub_delete') {
@@ -864,10 +853,6 @@ async function handleAdmin(request, env, runtime) {
                 if (!(await getSub(env, id))) return new Response('SUBS 不存在', { status: 404 });
 
                 await env.KV.delete(`${SUB_PREFIX}${id}`);
-
-                const currentOrder = await getSubOrder(env);
-                const nextOrder = currentOrder.filter(x => x !== id);
-                await env.KV.put(SUB_ORDER_KEY, JSON.stringify(nextOrder));
 
                 // 删除 SUB 后，自动从所有 URL 的绑定列表移除
                 const tokens = await listTokens(env);
@@ -1879,8 +1864,8 @@ ${renderToolScripts(false)}
 
 
 /* =========================================================
- * 新版管理后台
- * 保持 CF-SUB 原有视觉风格
+ * SUB-UI 管理后台
+ * 保持 CF-SUB 核心视觉与管理逻辑
  * ======================================================= */
 
 function renderAdminPage(url, env, subs, tokens, settings, status) {
@@ -1914,19 +1899,23 @@ function renderAdminPage(url, env, subs, tokens, settings, status) {
 ${getToolStyles()}
 .sub-grid{display:grid;gap:10px}
 .sub-row{border:1px solid rgba(229,229,223,.6);border-radius:12px;padding:12px;background:rgba(255,255,255,.5);color:inherit}
-.sub-sort-item{cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:pan-y;transition:opacity .12s,transform .12s,box-shadow .12s,border-color .12s}
-.sub-sort-item:active{cursor:grabbing}
-.sub-sort-item.is-dragging{opacity:.72;cursor:grabbing;box-shadow:0 8px 24px rgba(0,0,0,.12);border-color:rgba(31,75,153,.45);transform:scale(1.01)}
-.sub-sort-item.is-drag-over{border-color:rgba(31,75,153,.65);box-shadow:0 0 0 2px rgba(31,75,153,.08)}
-.sub-drag-area{min-width:0;flex:1}
 .sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
 .sub-name{font-weight:700;font-size:15px;color:inherit}
 .sub-count{color:#888;font-size:12px;margin-top:3px}
+.source-box{margin-top:9px;padding:9px;border-radius:9px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}
 .token-url{color:#1f4b99;word-break:break-all}
 .chip{display:inline-block;padding:3px 8px;margin:2px 3px 2px 0;border-radius:8px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}
 .check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}
-.check-item{display:flex;align-items:center;gap:8px;font-weight:400;margin:0}
+.check-item{display:flex;align-items:center;gap:8px;font-weight:400;margin:0;cursor:grab;touch-action:none;user-select:none}
 .check-item input{width:18px;height:18px}
+.sortable-item{position:relative;cursor:grab;touch-action:none;user-select:none}
+.sortable-item .drag-handle{display:inline-flex;align-items:center;justify-content:center;width:22px;min-width:22px;color:#999;font-size:18px;line-height:1;cursor:grab}
+.sortable-item.dragging{opacity:.55;transform:scale(.99);box-shadow:0 8px 22px rgba(0,0,0,.16)}
+#url-sub-list .check-item{padding:8px 10px;border:1px solid rgba(207,207,200,.45);border-radius:10px;background:rgba(250,250,250,.55)}
+#url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
+.sub-row.sortable-item{touch-action:none}
+.sub-row.sortable-item .sub-head{pointer-events:none}
+.sub-row.sortable-item .sub-head .actions{pointer-events:auto}
 .inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small-note{font-size:12px;color:#888;margin-top:6px}
 .edit-button{background:#111!important;color:#fff!important;border-color:#111!important;min-height:34px;padding:7px 14px}
@@ -1943,6 +1932,8 @@ ${getToolStyles()}
 .chip{background:rgba(100,181,246,.12);color:#90caf9}
 .check-list{background:rgba(20,20,20,.65);border-color:rgba(255,255,255,.12)}
 .check-item{color:#ddd}
+#url-sub-list .check-item{background:rgba(10,10,10,.45);border-color:rgba(255,255,255,.08)}
+.sortable-item .drag-handle{color:#777}
 .config-value{background:rgba(0,0,0,.22);border-color:rgba(255,255,255,.1);color:#ddd}
 .edit-button{background:#111!important;border-color:#444!important}
 }
@@ -2143,11 +2134,14 @@ ${getToolStyles()}
 
 <div id="sub-list" class="sub-grid" style="margin-top:12px;">
 ${subs.length ? subs.map(s => `
-<div class="sub-row sub-sort-item" data-sub-id="${escapeHTML(s.id)}">
+<div class="sub-row sortable-item" data-sort-id="${escapeHTML(s.id)}">
 <div class="sub-head">
-<div class="sub-drag-area">
+<div style="display:flex;align-items:flex-start;gap:8px;">
+<span class="drag-handle" aria-hidden="true">⠿</span>
+<div>
 <div class="sub-name">${escapeHTML(s.name)}</div>
-<div class="sub-count">${s.sources?.length || 0} 个来源</div>
+<div class="sub-count">${s.sources?.length || 0} 个来源 · 已启用</div>
+</div>
 </div>
 <div class="actions" style="margin-top:0;">
 <button type="button" class="edit-button" onclick="editSub('${escapeHTML(s.id)}')">编辑</button>
@@ -2254,116 +2248,24 @@ function renderSubList(){
    const name=escapeJS(s.name||'');
    const id=escapeJS(s.id||'');
    const count=s.sources?.length||0;
-   return '<div class="sub-row sub-sort-item" data-sub-id="'+id+'">'
+   return '<div class="sub-row sortable-item" data-sort-id="'+id+'">'
     +'<div class="sub-head">'
-    +'<div class="sub-drag-area">'
+    +'<div style="display:flex;align-items:flex-start;gap:8px;">'
+    +'<span class="drag-handle" aria-hidden="true">⠿</span>'
+    +'<div>'
     +'<div class="sub-name">'+name+'</div>'
-    +'<div class="sub-count">'+count+' 个来源</div>'
+    +'<div class="sub-count">'+count+' 个来源 · 已启用</div>'
+    +'</div>'
     +'</div>'
     +'<div class="actions" style="margin-top:0;">'
-    +'<button type="button" class="edit-button" onclick="editSub(\''+id+'\')">编辑</button>'
-    +'<button type="button" class="danger" onclick="deleteSub(\''+id+'\')">删除</button>'
+    +'<button type="button" class="edit-button" onclick="editSub(\\''+id+'\\')">编辑</button>'
+    +'<button type="button" class="danger" onclick="deleteSub(\\''+id+'\\')">删除</button>'
     +'</div>'
     +'</div>'
     +'</div>';
  }).join('');
- bindSubSort();
+ enableLongPressSort(box,'.sub-row',saveSubOrder);
 }
-
-let subDragState=null;
-let subDragSaveTimer=0;
-
-function bindSubSort(){
- const box=document.getElementById('sub-list');
- if(!box)return;
- box.querySelectorAll('.sub-sort-item').forEach(function(row){
-   row.addEventListener('pointerdown',subSortPointerDown);
- });
-}
-
-function subSortPointerDown(event){
- if(event.button!==undefined && event.button!==0)return;
- if(event.target.closest('button,a,input,textarea,select'))return;
- const row=event.currentTarget;
- const box=document.getElementById('sub-list');
- if(!box)return;
-
- const startX=event.clientX;
- const startY=event.clientY;
- let timer=window.setTimeout(function(){
-   subDragState={row,box,pointerId:event.pointerId,startX,startY,dragging:true};
-   row.classList.add('is-dragging');
-   try{row.setPointerCapture(event.pointerId)}catch(e){}
-   document.body.style.userSelect='none';
-   document.body.style.webkitUserSelect='none';
- },350);
-
- function cancel(){
-   window.clearTimeout(timer);
-   row.removeEventListener('pointermove',moveBeforeDrag);
-   row.removeEventListener('pointerup',finish);
-   row.removeEventListener('pointercancel',finish);
- }
- function moveBeforeDrag(e){
-   if(Math.hypot(e.clientX-startX,e.clientY-startY)>8)cancel();
- }
- function finish(){cancel()}
- row.addEventListener('pointermove',moveBeforeDrag,{passive:true});
- row.addEventListener('pointerup',finish,{once:true});
- row.addEventListener('pointercancel',finish,{once:true});
-
- row.addEventListener('pointermove',subSortPointerMove);
- row.addEventListener('pointerup',subSortPointerUp,{once:true});
- row.addEventListener('pointercancel',subSortPointerUp,{once:true});
-}
-
-function subSortPointerMove(event){
- const state=subDragState;
- if(!state || state.row!==event.currentTarget || state.pointerId!==event.pointerId)return;
- if(!state.dragging)return;
- event.preventDefault();
- const target=document.elementFromPoint(event.clientX,event.clientY);
- const over=target?.closest('.sub-sort-item');
- if(!over || over===state.row || !state.box.contains(over))return;
- state.box.querySelectorAll('.is-drag-over').forEach(function(x){x.classList.remove('is-drag-over')});
- over.classList.add('is-drag-over');
- const rect=over.getBoundingClientRect();
- const insertBefore=event.clientY < rect.top + rect.height/2;
- if(insertBefore)state.box.insertBefore(state.row,over);
- else state.box.insertBefore(state.row,over.nextSibling);
-}
-
-async function subSortPointerUp(event){
- const state=subDragState;
- if(!state || state.row!==event.currentTarget || state.pointerId!==event.pointerId)return;
- window.clearTimeout(subDragSaveTimer);
- const wasDragging=state.dragging;
- state.row.classList.remove('is-dragging');
- state.box.querySelectorAll('.is-drag-over').forEach(function(x){x.classList.remove('is-drag-over')});
- try{state.row.releasePointerCapture(event.pointerId)}catch(e){}
- subDragState=null;
- document.body.style.userSelect='';
- document.body.style.webkitUserSelect='';
- if(!wasDragging)return;
-
- const order=[...state.box.querySelectorAll('.sub-sort-item')].map(function(x){return x.dataset.subId;});
- const reordered=[];
- order.forEach(function(id){
-   const item=SUBS.find(function(x){return x.id===id;});
-   if(item)reordered.push(item);
- });
- SUBS.splice(0,SUBS.length,...reordered);
-
- try{
-   const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'sub_reorder',order})});
-   const text=await res.text();
-   if(!res.ok)throw new Error(text||'排序保存失败');
-   showToast('SUB 顺序已保存');
- }catch(err){
-   showToast(err.message||'排序保存失败');
- }
-}
-
 function renderUrlList(){
  const box=document.getElementById('url-list');
  if(!box)return;
@@ -2582,20 +2484,154 @@ async function deleteSub(id){
  showToast('聚合节点已删除');
 }
 
+function enableLongPressSort(container, itemSelector, onChange){
+ if(!container)return;
+ const items=()=>Array.from(container.querySelectorAll(itemSelector));
+ let dragging=null;
+ let timer=null;
+ let touchStartY=0;
+ let changed=false;
+
+ function clearTimer(){
+   if(timer){clearTimeout(timer);timer=null;}
+ }
+
+ function isInteractive(target){
+   return !!target.closest('button,input,select,textarea,a');
+ }
+
+ function finishTouch(){
+   clearTimer();
+   if(!dragging)return;
+   dragging.classList.remove('dragging');
+   dragging=null;
+   if(changed && typeof onChange==='function')onChange();
+   changed=false;
+ }
+
+ items().forEach(item=>{
+   item.draggable=true;
+
+   item.addEventListener('dragstart',function(e){
+     dragging=item;
+     changed=false;
+     item.classList.add('dragging');
+     if(e.dataTransfer){
+       e.dataTransfer.effectAllowed='move';
+       e.dataTransfer.setData('text/plain',item.dataset.sortId||'');
+     }
+   });
+
+   item.addEventListener('dragover',function(e){
+     if(!dragging || dragging===item)return;
+     e.preventDefault();
+     const rect=item.getBoundingClientRect();
+     const before=e.clientY < rect.top + rect.height/2;
+     if(before){
+       if(item.previousElementSibling!==dragging)container.insertBefore(dragging,item);
+     }else{
+       if(item.nextElementSibling!==dragging)container.insertBefore(dragging,item.nextElementSibling);
+     }
+     changed=true;
+   });
+
+   item.addEventListener('dragend',function(){
+     if(!dragging)return;
+     dragging.classList.remove('dragging');
+     dragging=null;
+     if(changed && typeof onChange==='function')onChange();
+     changed=false;
+   });
+
+   item.addEventListener('touchstart',function(e){
+     if(isInteractive(e.target))return;
+     const touch=e.touches[0];
+     if(!touch)return;
+     touchStartY=touch.clientY;
+     clearTimer();
+     timer=setTimeout(function(){
+       dragging=item;
+       item.classList.add('dragging');
+     },420);
+   },{passive:true});
+
+   item.addEventListener('touchmove',function(e){
+     const touch=e.touches[0];
+     if(!touch)return;
+     if(!dragging){
+       if(Math.abs(touch.clientY-touchStartY)>10)clearTimer();
+       return;
+     }
+     e.preventDefault();
+     const y=touch.clientY;
+     let target=null;
+     for(const other of items()){
+       if(other===dragging)continue;
+       const rect=other.getBoundingClientRect();
+       if(y < rect.top + rect.height/2){
+         target=other;
+         break;
+       }
+     }
+     if(target){
+       if(target!==dragging.nextElementSibling){
+         container.insertBefore(dragging,target);
+         changed=true;
+       }
+     }else if(container.lastElementChild!==dragging){
+       container.appendChild(dragging);
+       changed=true;
+     }
+   },{passive:false});
+
+   item.addEventListener('touchend',finishTouch,{passive:true});
+   item.addEventListener('touchcancel',finishTouch,{passive:true});
+ });
+}
+
+async function saveSubOrder(){
+ const box=document.getElementById('sub-list');
+ if(!box)return;
+ const ids=Array.from(box.querySelectorAll('.sub-row[data-sort-id]')).map(x=>x.dataset.sortId).filter(Boolean);
+ if(!ids.length)return;
+ try{
+   const res=await fetch(window.location.pathname,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({type:'sub_reorder',ids})
+   });
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'排序保存失败');
+   const byId=new Map(SUBS.map(x=>[String(x.id),x]));
+   const ordered=ids.map(id=>byId.get(String(id))).filter(Boolean);
+   SUBS.splice(0,SUBS.length,...ordered);
+   showToast('聚合节点顺序已保存');
+ }catch(err){
+   showToast(err.message||'排序保存失败');
+   renderSubList();
+ }
+}
+
 function renderUrlSubs(selected){
  const box=document.getElementById('url-sub-list');
  if(!SUBS.length){
    box.innerHTML='<div class="small-note">暂无 SUB，请先创建聚合节点。</div>';
    return;
  }
- box.innerHTML=SUBS.map(s=>\`
-   <label class="check-item">
-     <input type="checkbox" value="\${escapeJS(s.id)}" \${selected.includes(s.id)?'checked':''}>
-     <span>\${escapeJS(s.name)}</span>
-   </label>
- \`).join('');
+ const selectedSet=new Set((selected||[]).map(String));
+ const ordered=SUBS.filter(s=>selectedSet.has(String(s.id)))
+   .concat(SUBS.filter(s=>!selectedSet.has(String(s.id))));
+ box.innerHTML=ordered.map(function(s){
+   const id=escapeJS(s.id||'');
+   const checked=selectedSet.has(String(s.id))?' checked':'';
+   return '<label class="check-item sortable-item" data-sort-id="'+id+'">'
+    +'<span class="drag-handle" aria-hidden="true">⠿</span>'
+    +'<input type="checkbox" value="'+id+'"'+checked+'>'
+    +'<span>'+escapeJS(s.name||'')+'</span>'
+    +'</label>';
+ }).join('');
+ enableLongPressSort(box,'.check-item');
 }
-
 function escapeJS(value){
  return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
@@ -2629,7 +2665,10 @@ function editUrl(token){
 }
 
 async function saveUrl(){
- const selected=[...document.querySelectorAll('#url-sub-list input[type=checkbox]:checked')].map(x=>x.value);
+ const selected=[...document.querySelectorAll('#url-sub-list .check-item')].filter(item=>{
+   const input=item.querySelector('input[type=checkbox]');
+   return input && input.checked;
+ }).map(item=>item.dataset.sortId).filter(Boolean);
  const button=document.querySelector('#urlModal button:not(.secondary)');
  const status=document.getElementById('urlSaveStatus');
 
