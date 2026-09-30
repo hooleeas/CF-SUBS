@@ -1913,28 +1913,12 @@ ${getToolStyles()}
 .sortable-item.dragging{opacity:.55;transform:scale(.99);box-shadow:0 8px 22px rgba(0,0,0,.16)}
 #url-sub-list .check-item{padding:8px 10px;border:1px solid rgba(207,207,200,.45);border-radius:10px;background:rgba(250,250,250,.55)}
 #url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
-.sub-row.sortable-item{
-    position:relative;
-    cursor:grab;
-    user-select:none;
-    -webkit-user-select:none;
-    -webkit-touch-callout:none;
-    -webkit-tap-highlight-color:transparent;
-    touch-action:pan-y;
-}
-.sub-row.sortable-item *{
-    user-select:none;
-    -webkit-user-select:none;
-    -webkit-touch-callout:none;
-}
+.sub-row.sortable-item{touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab;-webkit-tap-highlight-color:transparent}
+.sub-row.sortable-item *{user-select:none;-webkit-user-select:none}
 .sub-row.sortable-item .sub-head{pointer-events:none}
 .sub-row.sortable-item .sub-head .actions{pointer-events:auto}
-.sub-row.sortable-item .actions,
 .sub-row.sortable-item .actions button{cursor:pointer}
-.sub-row.sortable-item.dragging{
-    touch-action:none;
-    cursor:grabbing;
-}
+.sub-row.sortable-item.dragging{touch-action:none;cursor:grabbing}
 .inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small-note{font-size:12px;color:#888;margin-top:6px}
 .edit-button{background:#111!important;color:#fff!important;border-color:#111!important;min-height:34px;padding:7px 14px}
@@ -2609,192 +2593,150 @@ function enableLongPressSort(container, itemSelector, onChange){
 }
 
 function enableSubLongPressSort(container, itemSelector, onChange){
-  if(!container)return;
+ if(!container)return;
+ const items=()=>Array.from(container.querySelectorAll(itemSelector));
+ let dragging=null;
+ let timer=null;
+ let pointerId=null;
+ let startY=0;
+ let lastY=0;
+ let changed=false;
+ let longPressed=false;
+ let suppressClickUntil=0;
 
-  const items=()=>Array.from(container.querySelectorAll(itemSelector));
-  let dragging=null;
-  let timer=null;
-  let pointerId=null;
-  let startX=0;
-  let startY=0;
-  let changed=false;
-  let suppressClickUntil=0;
+ function clearTimer(){
+   if(timer){clearTimeout(timer);timer=null;}
+ }
 
-  function clearTimer(){
-    if(timer){
-      clearTimeout(timer);
-      timer=null;
-    }
-  }
+ function isInteractive(target){
+   return !!target.closest('button,a,input,select,textarea,[contenteditable="true"]');
+ }
 
-  function isInteractive(target){
-    return !!target.closest('button,a,input,select,textarea,[contenteditable="true"]');
-  }
+ function cleanup(item){
+   clearTimer();
+   if(item) item.classList.remove('dragging');
+   if(item && pointerId!==null){
+     try{item.releasePointerCapture(pointerId);}catch(e){}
+   }
+   dragging=null;
+   pointerId=null;
+   longPressed=false;
+   document.body.style.userSelect='';
+   document.body.style.webkitUserSelect='';
+ }
 
-  function setSelectionDisabled(disabled){
-    document.body.style.userSelect=disabled?'none':'';
-    document.body.style.webkitUserSelect=disabled?'none':'';
-  }
+ function finish(item){
+   const wasDragging=!!dragging;
+   const shouldSave=wasDragging && changed;
+   cleanup(item || dragging);
+   if(shouldSave && typeof onChange==='function')onChange();
+   changed=false;
+ }
 
-  function cleanup(){
-    clearTimer();
+ function moveItem(clientY){
+   if(!dragging)return;
+   const y=clientY;
+   let target=null;
+   for(const other of items()){
+     if(other===dragging)continue;
+     const rect=other.getBoundingClientRect();
+     if(y < rect.top + rect.height/2){
+       target=other;
+       break;
+     }
+   }
 
-    if(dragging){
-      dragging.classList.remove('dragging');
-      dragging.style.pointerEvents='';
-    }
+   if(target){
+     if(target!==dragging.nextElementSibling){
+       container.insertBefore(dragging,target);
+       changed=true;
+     }
+   }else if(container.lastElementChild!==dragging){
+     container.appendChild(dragging);
+     changed=true;
+   }
+ }
 
-    dragging=null;
-    pointerId=null;
-    setSelectionDisabled(false);
-  }
+ items().forEach(item=>{
+   item.draggable=false;
 
-  function finish(save){
-    const shouldSave=!!dragging && !!save && changed;
-    cleanup();
+   item.addEventListener('dragstart',function(e){
+     e.preventDefault();
+   });
 
-    if(shouldSave && typeof onChange==='function'){
-      onChange();
-    }
+   item.addEventListener('pointerdown',function(e){
+     if(e.pointerType==='mouse' && e.button!==0)return;
+     if(isInteractive(e.target))return;
+     if(dragging)return;
 
-    changed=false;
-  }
+     pointerId=e.pointerId;
+     startY=e.clientY;
+     lastY=e.clientY;
+     changed=false;
+     longPressed=false;
+     clearTimer();
 
-  function beginDrag(item, e){
-    if(dragging || !item)return;
+     timer=setTimeout(function(){
+       timer=null;
+       if(pointerId!==e.pointerId)return;
+       dragging=item;
+       longPressed=true;
+       suppressClickUntil=Date.now()+700;
+       item.classList.add('dragging');
+       document.body.style.userSelect='none';
+       document.body.style.webkitUserSelect='none';
+       try{item.setPointerCapture(e.pointerId);}catch(err){}
+     },420);
+   });
 
-    dragging=item;
-    changed=false;
-    suppressClickUntil=Date.now()+700;
+   item.addEventListener('pointermove',function(e){
+     if(pointerId!==e.pointerId)return;
+     lastY=e.clientY;
 
-    item.classList.add('dragging');
-    setSelectionDisabled(true);
+     if(!longPressed){
+       if(Math.abs(e.clientY-startY)>10){
+         clearTimer();
+       }
+       return;
+     }
 
-    try{
-      if(e && item.setPointerCapture && e.pointerId!=null){
-        item.setPointerCapture(e.pointerId);
-      }
-    }catch(_){}
+     e.preventDefault();
+     moveItem(e.clientY);
+   });
 
-    if(e){
-      e.preventDefault();
-    }
-  }
+   item.addEventListener('pointerup',function(e){
+     if(pointerId!==e.pointerId)return;
+     finish(item);
+   });
 
-  function moveDrag(y){
-    if(!dragging)return;
+   item.addEventListener('pointercancel',function(e){
+     if(pointerId!==e.pointerId)return;
+     finish(item);
+   });
 
-    let target=null;
+   item.addEventListener('lostpointercapture',function(e){
+     if(pointerId!==e.pointerId)return;
+     if(dragging)finish(item);
+     else clearTimer();
+   });
 
-    for(const other of items()){
-      if(other===dragging)continue;
+   item.addEventListener('click',function(e){
+     if(Date.now()<suppressClickUntil){
+       e.preventDefault();
+       e.stopPropagation();
+     }
+   },true);
 
-      const rect=other.getBoundingClientRect();
+   item.addEventListener('contextmenu',function(e){
+     if(longPressed || Date.now()<suppressClickUntil)e.preventDefault();
+   });
 
-      if(y < rect.top + rect.height/2){
-        target=other;
-        break;
-      }
-    }
-
-    if(target){
-      if(target!==dragging.nextElementSibling){
-        container.insertBefore(dragging,target);
-        changed=true;
-      }
-    }else if(container.lastElementChild!==dragging){
-      container.appendChild(dragging);
-      changed=true;
-    }
-  }
-
-  items().forEach(item=>{
-    // 不使用原生 draggable，避免浏览器自己的拖拽/文本选择与长按排序冲突。
-    item.draggable=false;
-
-    item.addEventListener('pointerdown',function(e){
-      if(e.button!==undefined && e.button!==0)return;
-      if(isInteractive(e.target))return;
-
-      pointerId=e.pointerId;
-      startX=e.clientX;
-      startY=e.clientY;
-      changed=false;
-
-      clearTimer();
-
-      timer=setTimeout(function(){
-        if(pointerId!==e.pointerId)return;
-
-        beginDrag(item,e);
-      },320);
-    });
-
-    item.addEventListener('pointermove',function(e){
-      if(pointerId!==e.pointerId)return;
-
-      if(!dragging){
-        const dx=Math.abs(e.clientX-startX);
-        const dy=Math.abs(e.clientY-startY);
-
-        // 长按之前发生明显移动，视为页面正常滚动，不启动排序。
-        if(dx>8 || dy>8){
-          clearTimer();
-        }
-        return;
-      }
-
-      e.preventDefault();
-      moveDrag(e.clientY);
-    });
-
-    item.addEventListener('pointerup',function(e){
-      if(pointerId!==e.pointerId)return;
-
-      const wasDragging=!!dragging;
-      finish(wasDragging);
-
-      try{
-        if(item.releasePointerCapture && item.hasPointerCapture?.(e.pointerId)){
-          item.releasePointerCapture(e.pointerId);
-        }
-      }catch(_){}
-    });
-
-    item.addEventListener('pointercancel',function(e){
-      if(pointerId!==e.pointerId)return;
-      finish(false);
-    });
-
-    item.addEventListener('lostpointercapture',function(e){
-      if(pointerId!==e.pointerId)return;
-      if(dragging)finish(true);
-      else clearTimer();
-    });
-
-    item.addEventListener('contextmenu',function(e){
-      // 长按排序期间禁止系统菜单；同时彻底关闭 SUB 卡片的长按菜单。
-      if(dragging || Date.now()<suppressClickUntil){
-        e.preventDefault();
-      }
-    });
-
-    item.addEventListener('selectstart',function(e){
-      // SUB 卡片本身及其文字都不能进入浏览器文本选择。
-      if(!isInteractive(e.target)){
-        e.preventDefault();
-      }
-    });
-
-    item.addEventListener('click',function(e){
-      // 拖动结束后的松手事件不能误触发卡片内按钮。
-      if(Date.now()<suppressClickUntil){
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    },true);
-  });
+   item.addEventListener('selectstart',function(e){
+     if(!isInteractive(e.target))e.preventDefault();
+   });
+ });
 }
+
 async function saveSubOrder(){
  const box=document.getElementById('sub-list');
  if(!box)return;
