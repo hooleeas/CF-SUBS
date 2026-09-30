@@ -2269,7 +2269,7 @@ function renderSubList(){
     +'</div>'
     +'</div>';
  }).join('');
- enableSubLongPressSort(box,'.sub-row',saveSubOrder);
+ enableLongPressSort(box,'.sub-row',saveSubOrder);
 }
 function renderUrlList(){
  const box=document.getElementById('url-list');
@@ -2594,119 +2594,6 @@ function enableLongPressSort(container, itemSelector, onChange){
  });
 }
 
-function enableSubLongPressSort(container, itemSelector, onChange){
- if(!container)return;
- const items=()=>Array.from(container.querySelectorAll(itemSelector));
- let dragged=null;
- let touchDragging=false;
- let touchMoved=false;
- let oldOrder='';
-
- function clearDrag(){
-   if(dragged)dragged.classList.remove('dragging');
-   items().forEach(function(x){x.classList.remove('drag-over')});
-   dragged=null;
-   touchDragging=false;
-   touchMoved=false;
- }
-
- function currentOrder(){
-   return items().map(function(x){return x.dataset.sortId}).filter(Boolean).join(',');
- }
-
- function save(){
-   const now=currentOrder();
-   if(!now || now===oldOrder)return;
-   oldOrder=now;
-   if(typeof onChange==='function')onChange();
- }
-
- items().forEach(function(item){
-   item.draggable=true;
-
-   item.addEventListener('dragstart',function(e){
-     if(e.target.closest('button,a,input,select,textarea,[contenteditable="true"]')){
-       e.preventDefault();
-       return;
-     }
-     dragged=item;
-     item.classList.add('dragging');
-     if(e.dataTransfer){
-       e.dataTransfer.effectAllowed='move';
-       e.dataTransfer.setData('text/plain',item.dataset.sortId||'');
-     }
-   });
-
-   item.addEventListener('dragover',function(e){
-     if(!dragged || dragged===item)return;
-     e.preventDefault();
-     const r=item.getBoundingClientRect();
-     const before=e.clientY<r.top+r.height/2;
-     container.insertBefore(dragged,before?item:item.nextSibling);
-     items().forEach(function(x){x.classList.remove('drag-over')});
-     item.classList.add('drag-over');
-   });
-
-   item.addEventListener('drop',function(e){
-     e.preventDefault();
-     if(!dragged)return;
-     save();
-     clearDrag();
-   });
-
-   item.addEventListener('dragend',function(){
-     if(!dragged)return;
-     save();
-     clearDrag();
-   });
-
-   const handle=item.querySelector('.drag-handle');
-   if(handle){
-     handle.addEventListener('touchstart',function(e){
-       const touch=e.touches&&e.touches[0];
-       if(!touch)return;
-       dragged=item;
-       touchDragging=true;
-       touchMoved=false;
-       item.classList.add('dragging');
-       if(e.cancelable)e.preventDefault();
-     },{passive:false});
-
-     handle.addEventListener('touchmove',function(e){
-       if(!touchDragging||!dragged)return;
-       const touch=e.touches&&e.touches[0];
-       if(!touch)return;
-       touchMoved=true;
-       if(e.cancelable)e.preventDefault();
-       const y=touch.clientY;
-       let target=null;
-       items().forEach(function(x){
-         if(x===dragged)return;
-         const r=x.getBoundingClientRect();
-         if(y>=r.top&&y<=r.bottom)target=x;
-       });
-       if(target){
-         const r=target.getBoundingClientRect();
-         const before=y<r.top+r.height/2;
-         container.insertBefore(dragged,before?target:target.nextSibling);
-         items().forEach(function(x){x.classList.remove('drag-over')});
-         target.classList.add('drag-over');
-       }
-     },{passive:false});
-
-     handle.addEventListener('touchend',function(){
-       if(!touchDragging)return;
-       if(touchMoved)save();
-       clearDrag();
-     },{passive:true});
-
-     handle.addEventListener('touchcancel',function(){clearDrag()},{passive:true});
-     handle.addEventListener('contextmenu',function(e){e.preventDefault()});
-   }
- });
-
- oldOrder=currentOrder();
-}
 async function saveSubOrder(){
  const box=document.getElementById('sub-list');
  if(!box)return;
