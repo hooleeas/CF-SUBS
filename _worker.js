@@ -22,32 +22,21 @@
  *   CODE
  *   SUBUPTIME
  *   WARP
- *   LINK
- *   LINKSUB
  */
 
-let mytoken = 'auto';
+const INTERNAL_TOKEN_SEED = 'CF-SUBS-INTERNAL';
+const ADMIN_SESSION_CONTEXT = 'CF-SUBS-ADMIN-SESSION';
+const ADMIN_SESSION_MAX_AGE_SECONDS = 604800;
 let FileName = 'CF-SUBS';
 let SUBUpdateTime = 6;
 let total = 99;
 let timestamp = 4102329600000;
-
-let MainData = `
-https://cfxr.eu.org/getSub
-`;
-
-let urls = [];
 
 // ================= 全局默认配置 =================
 const defaultSubConverter = "SUBAPI.cmliussss.net";
 const defaultSubConfig = "https://raw.githubusercontent.com/hooleeas/ACL4SSR/refs/heads/master/Clash/config/China_Direct_Overseas_Proxy.ini";
 const defaultSubProtocol = "https";
 // ================================================
-
-let subConverter = defaultSubConverter;
-let subConfig = defaultSubConfig;
-let subProtocol = defaultSubProtocol;
-let config_noAds = '';
 
 // ================= 主页配置 =================
 let fakeMode = '';
@@ -87,11 +76,15 @@ async function handleRequest(request, env) {
         const conversionSourceToken = url.searchParams.get('sourceToken') || '';
 
         // 每次请求重新从环境变量读取，保持 CF-SUB 原有变量行为
-        // 不再使用 TOKEN 环境变量；旧 /auto 入口继续由内部默认值兼容。
+        // 不再使用 TOKEN 环境变量。
         let adminUser = env.USER || '';
         let adminPass = env.PASS || '';
         let adminPath = DEFAULT_ADMIN_PATH;
         let siteLogo = '';
+        let subConverter = '';
+        let subConfig = '';
+        let subProtocol = defaultSubProtocol;
+        let config_noAds = '';
 
         fakeUrl = env.URL || '';
         fakeUrl302 = env.URL302 || '';
@@ -100,9 +93,8 @@ async function handleRequest(request, env) {
         // 读取 KV 配置
         if (env.KV) {
             try {
-                const kvConfigStr = await env.KV.get('CONFIG.json');
-                if (kvConfigStr) {
-                    const kvConfig = JSON.parse(kvConfigStr);
+                const kvConfig = await getKVJson(env, 'CONFIG.json');
+                if (kvConfig) {
 
                     FileName = kvConfig.subName || 'CF-SUBS';
                     siteLogo = String(kvConfig.siteLogo || '').trim();
@@ -149,7 +141,7 @@ async function handleRequest(request, env) {
         const currentDate = new Date();
         currentDate.setHours(0, 0, 0, 0);
         const timeTemp = Math.ceil(currentDate.getTime() / 1000);
-        const fakeToken = await MD5MD5(`${mytoken}${timeTemp}`);
+        const fakeToken = await MD5MD5(`${INTERNAL_TOKEN_SEED}${timeTemp}`);
 
         let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
         total = total * 1099511627776;
@@ -175,20 +167,37 @@ async function handleRequest(request, env) {
         }
 
         // ==================== 管理后台 ====================
-        if (url.pathname === `/${adminPath}`) {
+        if (
+            url.pathname === `/${adminPath}` ||
+            url.pathname === `/${adminPath}/JSON` ||
+            url.pathname === `/${adminPath}/status`
+        ) {
             if (isAdminLoginEnabled(adminUser, adminPass)) {
-                const isLoggedIn = await isAdminLoggedIn(request, mytoken, adminUser, adminPass);
+                const isLoggedIn = await isAdminLoggedIn(request, adminUser, adminPass);
                 if (!isLoggedIn) {
                     if (request.method === 'POST') {
-                        return await handleAdminLogin(request, url, mytoken, adminUser, adminPass);
+                        return await handleAdminLogin(request, url, adminUser, adminPass, siteLogo);
                     }
-                    return new Response(renderLoginPage(url), {
+                    return new Response(renderLoginPage(url, '', siteLogo), {
                         headers: {
                             'Content-Type': 'text/html;charset=utf-8',
                             'Cache-Control': 'no-store'
                         }
                     });
                 }
+            }
+
+            if (url.pathname === `/${adminPath}/JSON`) {
+                return await handleAdminJson(request, env, adminPath, siteLogo);
+            }
+            if (url.pathname === `/${adminPath}/status`) {
+                return await handleAdminStatus(request, {
+                    effectiveSubConverter,
+                    effectiveSubConfig,
+                    effectiveSubProtocol,
+                    hasCustomApi,
+                    hasCustomConfig
+                });
             }
 
             return await handleAdmin(request, env, {
@@ -208,10 +217,6 @@ async function handleRequest(request, env) {
         //   /abc123
         //   /abc123?clash
         //   /?token=abc123
-        //
-        // 兼容旧 CF-SUB：
-        //   /auto
-        //   /?token=auto
         let publicToken = queryToken;
 
         if (!publicToken && url.pathname !== '/') {
@@ -224,17 +229,13 @@ async function handleRequest(request, env) {
             tokenData = await getToken(env, publicToken);
         }
 
-        const legacyAdminPath =
-            publicToken === mytoken ||
-            publicToken.toLowerCase() === String(mytoken).toLowerCase();
-
         const isFakeTokenRequest =
             publicToken === fakeToken ||
             url.pathname === '/' + fakeToken;
 
-        // 新 URL / auto / fakeToken 都属于有效入口
+        // 新 URL 和内部转换入口都属于有效入口
         const validPublicEntry =
-            !!tokenData || legacyAdminPath || isFakeTokenRequest;
+            !!tokenData || isFakeTokenRequest;
 
         // ==================== 无效路径 / 主页 ====================
         if (!validPublicEntry && url.pathname !== '/') {
@@ -244,7 +245,7 @@ async function handleRequest(request, env) {
         if (!validPublicEntry && url.pathname === '/') {
             if (fakeMode === '1' && fakeUrl) {
                 try {
-                    return await proxyURL(fakeUrl, url, FileName);
+                    return await proxyURL(fakeUrl, url, FileName, siteLogo);
                 } catch (e) {}
             } else if (fakeMode === '2' && fakeUrl302) {
                 return Response.redirect(fakeUrl302, 302);
@@ -258,12 +259,13 @@ async function handleRequest(request, env) {
                 } else {
                     html = title + html;
                 }
+                html = injectFavicon(html, siteLogo);
                 return new Response(html, {
                     headers: { 'Content-Type': 'text/html; charset=UTF-8' }
                 });
             }
 
-            return new Response(await nginx(FileName), {
+            return new Response(await nginx(FileName, siteLogo), {
                 headers: { 'Content-Type': 'text/html; charset=UTF-8' }
             });
         }
@@ -281,16 +283,6 @@ async function handleRequest(request, env) {
                 const sourceTokenData = await getToken(env, conversionSourceToken);
                 if (sourceTokenData) {
                     selectedSources = await getSourcesForToken(env, sourceTokenData);
-                } else {
-                    selectedSources = await getAllManagedSources(env);
-                }
-            } else if (legacyAdminPath || isFakeTokenRequest) {
-                selectedSources = await getAllManagedSources(env);
-            } else if (legacyGuestPath) {
-                // 如果没有 SUBS，则使用旧 LINK.txt / LINK 环境变量。
-                selectedSources = await getLegacySources(env);
-                if (!selectedSources.length) {
-                    selectedSources = await getAllManagedSources(env);
                 }
             }
         }
@@ -322,33 +314,6 @@ async function handleRequest(request, env) {
                 );
             }
 
-            // auto / mytoken：管理员后台仍支持旧入口，但新项目推荐 /admin
-            if (legacyAdminPath) {
-                if (isAdminLoginEnabled(adminUser, adminPass)) {
-                    const isLoggedIn = await isAdminLoggedIn(request, mytoken, adminUser, adminPass);
-                    if (!isLoggedIn) {
-                        if (request.method === 'POST') {
-                            return await handleAdminLogin(request, url, mytoken, adminUser, adminPass);
-                        }
-                        return new Response(renderLoginPage(url), {
-                            headers: {
-                                'Content-Type': 'text/html;charset=utf-8',
-                                'Cache-Control': 'no-store'
-                            }
-                        });
-                    }
-                }
-
-                return await handleAdmin(request, env, {
-                    adminUser,
-                    adminPass,
-                    effectiveSubConverter,
-                    effectiveSubConfig,
-                    effectiveSubProtocol,
-                    hasCustomApi,
-                    hasCustomConfig
-                });
-            }
         }
 
         // ==================== 原 CF-SUB 核心订阅处理 ====================
@@ -357,7 +322,6 @@ async function handleRequest(request, env) {
             env,
             selectedSources,
             {
-                mytoken,
                 fakeToken,
                 effectiveSubConverter,
                 effectiveSubConfig,
@@ -460,11 +424,17 @@ async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomCo
         adminApiCss = 'status-warn';
         guestApiCss = 'status-ok';
     } else if (!hasCustomApi && defaultApiOk) {
-        adminApiHtml = `⚠️SUBAPI为空 已切换为默认配置 ✅默认值可用`;
+        adminApiHtml = `⚠️SUBAPI无效 已切换为默认配置 ✅默认值可用`;
         guestApiHtml = `✅SUBAPI状态正常 (${escapeHTML(defaultApiVersion)})`;
         finalApiUrl = `${defaultSubProtocol}://${defaultSubConverter}`;
         adminApiCss = 'status-warn';
         guestApiCss = 'status-ok';
+    } else if (!hasCustomApi) {
+        adminApiHtml = '⚠️SUBAPI未配置 已切换为默认配置 ⚠️默认服务暂不可用';
+        guestApiHtml = '❌默认SUBAPI暂不可用';
+        finalApiUrl = `${defaultSubProtocol}://${defaultSubConverter}`;
+        adminApiCss = 'status-warn';
+        guestApiCss = 'status-error';
     } else {
         adminApiHtml = '❌SUBAPI无效待维护';
         guestApiHtml = adminApiHtml;
@@ -492,7 +462,7 @@ async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomCo
         adminConfigCss = 'status-warn';
         guestConfigCss = 'status-ok';
     } else if (!hasCustomConfig && defaultConfigOk) {
-        adminConfigHtml = '⚠️SUBCONFIG为空 已切换为默认配置 ✅默认值可用';
+        adminConfigHtml = '⚠️SUBCONFIG无效 已切换为默认配置 ✅默认值可用';
         guestConfigHtml = '✅SUBCONFIG状态正常';
         finalConfigUrl = defaultSubConfig;
         adminConfigCss = 'status-warn';
@@ -530,14 +500,12 @@ function makeSubId() {
     return value;
 }
 
-async function makeRandomToken(env, length = 6) {
+async function makeRandomToken(env, adminPath) {
     for (let n = 0; n < 30; n++) {
-        const bytes = crypto.getRandomValues(new Uint8Array(length));
-        let token = '';
-        for (const b of bytes) token += ID_CHARS[b % ID_CHARS.length];
+        const token = crypto.randomUUID();
 
         if (
-            !['admin', 'api', 'login', 'logout', 'favicon.ico'].includes(token.toLowerCase()) &&
+            validCustomToken(token, adminPath) &&
             !(await getToken(env, token))
         ) {
             return token;
@@ -549,7 +517,7 @@ async function makeRandomToken(env, length = 6) {
 async function getSub(env, id) {
     if (!env.KV || !id) return null;
     try {
-        return await env.KV.get(`${SUB_PREFIX}${id}`, 'json');
+        return await getKVJson(env, `${SUB_PREFIX}${id}`);
     } catch (e) {
         return null;
     }
@@ -558,7 +526,7 @@ async function getSub(env, id) {
 async function getToken(env, token) {
     if (!env.KV || !token) return null;
     try {
-        return await env.KV.get(`${URL_PREFIX}${token}`, 'json');
+        return await getKVJson(env, `${URL_PREFIX}${token}`);
     } catch (e) {
         return null;
     }
@@ -619,6 +587,260 @@ async function listTokens(env) {
     return result;
 }
 
+async function listKVEntries(env) {
+    const result = [];
+    let cursor;
+
+    do {
+        const page = await env.KV.list(cursor ? { cursor } : {});
+        const entries = await Promise.all(page.keys.map(async ({ name }) => {
+            const value = await env.KV.get(name);
+            let formattedValue = value || '';
+            let isJson = false;
+            let rawValue = value || '';
+
+            if (value !== null) {
+                try {
+                    const parsed = JSON.parse(value);
+                    const uppercaseValue = serializeKVJson(parsed);
+                    if (uppercaseValue !== value) await env.KV.put(name, uppercaseValue);
+                    formattedValue = JSON.stringify(JSON.parse(uppercaseValue), null, 2);
+                    isJson = true;
+                    rawValue = JSON.parse(uppercaseValue);
+                } catch (e) {
+                    rawValue = value;
+                }
+            }
+
+            return { name, value: formattedValue, isJson, raw: rawValue };
+        }));
+
+        result.push(...entries);
+        cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+
+    result.sort((a, b) => a.name.localeCompare(b.name));
+    return result;
+}
+
+async function handleAdminJson(request, env, adminPath, siteLogo) {
+    if (!env.KV) {
+        return new Response('未绑定名为 KV 的 Cloudflare KV Namespace。', { status: 500 });
+    }
+
+    if (request.method === 'POST') {
+        try {
+            const data = await request.json();
+            if (data?.type !== 'import_all_json') {
+                return jsonResponse({ ok: false, error: '不支持的导入类型' }, 400);
+            }
+            const payload = data.payload;
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                return jsonResponse({ ok: false, error: '导入内容必须是一个 JSON 对象' }, 400);
+            }
+
+            const entries = Object.entries(payload);
+            for (const [key, value] of entries) {
+                const raw = value === undefined ? '' : value;
+                const text = typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2);
+                await env.KV.put(String(key), text);
+            }
+
+            return jsonResponse({ ok: true, count: entries.length });
+        } catch (error) {
+            return jsonResponse({ ok: false, error: '导入失败: ' + (error?.message || String(error)) }, 400);
+        }
+    }
+
+    if (request.method !== 'GET') {
+        return new Response('Method Not Allowed', { status: 405 });
+    }
+
+    const entries = await listKVEntries(env);
+    return new Response(renderAdminJsonPage(entries, adminPath, siteLogo), {
+        headers: {
+            'Content-Type': 'text/html;charset=utf-8',
+            'Cache-Control': 'no-store'
+        }
+    });
+}
+
+async function handleAdminStatus(request, runtime) {
+    if (request.method !== 'GET') {
+        return new Response('Method Not Allowed', { status: 405 });
+    }
+
+    const status = await getBackendStatus(
+        runtime.effectiveSubConverter,
+        runtime.effectiveSubConfig,
+        runtime.effectiveSubProtocol,
+        runtime.hasCustomApi,
+        runtime.hasCustomConfig
+    );
+    return jsonResponse(status);
+}
+
+function renderAdminJsonPage(entries, adminPath, siteLogo) {
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<title>备份与迁移</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+${faviconTag(siteLogo)}
+<style>
+${getToolStyles()}
+.json-shell{max-width:1100px;padding-top:0!important}
+.json-header{margin:0 -28px 18px;padding:28px;border-bottom:1px solid rgba(120,130,140,.18)}
+.json-list{display:grid;gap:10px}
+.json-entry{min-width:0;border:1px solid rgba(229,229,223,.7);border-radius:8px;padding:14px;background:rgba(255,255,255,.62)}
+.json-entry-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.json-key{font-weight:700;overflow-wrap:anywhere;font-size:18px;line-height:1.35}
+.json-kind{flex:0 0 auto;color:#687384;font-size:12px}
+.json-toggle{padding:6px 12px;border-radius:8px;border:1px solid rgba(120,130,140,.35);background:rgba(255,255,255,.7);color:#1f2937;font-weight:600;cursor:pointer;min-width:78px}
+.json-toggle:hover{background:rgba(59,130,246,.08)}
+.json-value{display:none;margin:0;padding:12px;border-radius:6px;background:rgba(245,247,248,.85);font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:70vh}
+.json-entry.open .json-value{display:block}
+.json-entry.open .json-toggle{background:#1f2937;color:#fff;border-color:#1f2937}
+.json-empty{color:#777;text-align:center;padding:28px 12px}
+.json-actions{display:flex;gap:8px;flex-wrap:wrap}
+.json-btn{padding:8px 12px;border-radius:8px;border:1px solid rgba(120,130,140,.35);background:rgba(255,255,255,.7);cursor:pointer;color:#1f2937;font-weight:600}
+.json-btn.primary{background:#1f2937;color:#fff;border-color:#1f2937}
+@media(max-width:600px){.json-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.json-header{margin:0 -18px 16px;padding:22px 18px 20px}.json-header .title{font-size:22px}.json-entry{padding:10px}.json-value{padding:10px}.json-key{font-size:16px}.json-toggle{min-width:72px;padding:6px 10px}.json-actions{width:100%}.json-btn{flex:1 1 auto}} 
+@media(prefers-color-scheme:dark){.json-header{border-bottom-color:rgba(255,255,255,.1)}.json-entry{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.12)}.json-kind,.json-empty{color:#9aa7b5}.json-value{background:rgba(2,6,8,.72);color:#e7ecef}.json-toggle,.json-btn{background:rgba(13,17,23,.8);border-color:rgba(255,255,255,.12);color:#e7ecef}.json-entry.open .json-toggle{background:#dfeafc;color:#0f172a;border-color:#dfeafc}.json-btn.primary{background:#dfeafc;color:#0f172a;border-color:#dfeafc}}
+</style>
+</head>
+<body>
+<main class="page app-shell json-shell">
+<header class="header json-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;">
+<div><h1 class="title">备份与迁移</h1><div class="subtitle">共 ${entries.length} 项数据；导入时同名覆盖，其他数据保留</div></div>
+<div class="json-actions">
+<button type="button" class="json-btn primary" id="json-export-all">备份</button>
+<button type="button" class="json-btn" id="json-import-all">合并导入</button>
+<a class="button secondary" href="/${escapeHTML(adminPath)}">返回控制台</a>
+<a class="button danger" href="/${escapeHTML(adminPath)}/logout">退出</a>
+</div>
+</header>
+<div class="json-list">
+${entries.length ? entries.map((entry, index) => `
+<article class="json-entry">
+<div class="json-entry-head">
+<div class="json-key">${escapeHTML(entry.name)}</div>
+<div style="display:flex;align-items:center;gap:10px;">
+<span class="json-kind">${entry.isJson ? 'JSON' : '文本'}</span>
+<button type="button" class="json-toggle" data-index="${index}" aria-expanded="false">展开</button>
+</div>
+</div>
+<pre class="json-value">${escapeHTML(entry.value)}</pre>
+</article>`).join('') : '<div class="json-entry json-empty">KV 暂无数据</div>'}
+</div>
+<script>
+(function(){
+  const exportPayload = ${serializeInlineJson(Object.fromEntries(entries.map(entry => [entry.name, entry.raw ?? (entry.value || '')])))};
+  const entries = Array.from(document.querySelectorAll('.json-entry'));
+
+  entries.forEach(function(entry){
+    const toggle = entry.querySelector('.json-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('click', function(){
+      const wasOpen = entry.classList.contains('open');
+      entries.forEach(function(item){
+        const t = item.querySelector('.json-toggle');
+        item.classList.remove('open');
+        if (t) {
+          t.textContent = '展开';
+          t.setAttribute('aria-expanded', 'false');
+        }
+      });
+      if (!wasOpen) {
+        entry.classList.add('open');
+        toggle.textContent = '隐藏';
+        toggle.setAttribute('aria-expanded', 'true');
+      }
+    });
+  });
+
+  function downloadJson(filename, payload){
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function showJsonMessage(message, isError){
+    const toast = document.getElementById('copyNotice') || (() => {
+      const el = document.createElement('div');
+      el.id = 'copyNotice';
+      el.style.position = 'fixed';
+      el.style.top = '20px';
+      el.style.right = '20px';
+      el.style.padding = '10px 14px';
+      el.style.borderRadius = '10px';
+      el.style.background = isError ? '#d93025' : '#1f2937';
+      el.style.color = '#fff';
+      el.style.zIndex = '10000';
+      el.style.boxShadow = '0 8px 30px rgba(0,0,0,.18)';
+      el.style.fontSize = '13px';
+      document.body.appendChild(el);
+      return el;
+    })();
+    toast.textContent = message;
+    toast.style.display = 'block';
+    clearTimeout(window.__jsonToastTimer);
+    window.__jsonToastTimer = setTimeout(() => { toast.style.display = 'none'; }, 1800);
+  }
+
+    document.getElementById('json-export-all').addEventListener('click', function(){
+        downloadJson('kv-all-export.json', exportPayload);
+        showJsonMessage('已备份全部数据');
+    });
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+
+  document.getElementById('json-import-all').addEventListener('click', function(){
+    input.click();
+  });
+
+  input.addEventListener('change', async function(event){
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('导入内容必须是一个 JSON 对象');
+      }
+      const response = await fetch(window.location.pathname, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'import_all_json', payload: parsed })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || '导入失败');
+    showJsonMessage('已导入 ' + (result.count || 0) + ' 项数据');
+      setTimeout(() => window.location.reload(), 500);
+    } catch (error) {
+      showJsonMessage(error.message || '导入失败', true);
+    } finally {
+      input.value = '';
+    }
+  });
+})();
+</script>
+</main>
+</body>
+</html>`;
+}
+
 function normalizeAdminPath(value) {
     let path = String(value || '').trim();
     if (!path) return DEFAULT_ADMIN_PATH;
@@ -639,17 +861,25 @@ function validName(name) {
     return name.length >= 1 && name.length <= 80;
 }
 
-function validCustomToken(token) {
+function validCustomToken(token, adminPath) {
     const lower = token.toLowerCase();
     const reserved = new Set([
-        'admin', 'api', 'login', 'logout', 'favicon.ico', 'auto',
-        String(mytoken || '').toLowerCase(),
+        'admin', 'api', 'login', 'logout', 'favicon.ico',
+        DEFAULT_ADMIN_PATH.toLowerCase(),
+        String(adminPath || DEFAULT_ADMIN_PATH).toLowerCase()
     ]);
+    const hasControlCharacter = Array.from(token).some(character => {
+        const code = character.charCodeAt(0);
+        return code <= 31 || code === 127;
+    });
 
     return (
-        token.length >= 3 &&
-        token.length <= 80 &&
-        /^[A-Za-z0-9_-]+$/.test(token) &&
+        token.length > 0 &&
+        new TextEncoder().encode(token).length <= 508 &&
+        token !== '.' &&
+        token !== '..' &&
+        !/[\\/?#]/.test(token) &&
+        !hasControlCharacter &&
         !reserved.has(lower)
     );
 }
@@ -698,42 +928,6 @@ async function getSourcesForToken(env, tokenData) {
     return [...new Set(result.map(x => String(x).trim()).filter(Boolean))];
 }
 
-async function getAllManagedSources(env) {
-    const result = [];
-    const subs = await listSubs(env);
-
-    for (const sub of subs) {
-        if (!sub) continue;
-        if (Array.isArray(sub.sources)) result.push(...sub.sources);
-    }
-
-    // 如果没有创建 SUBS，则兼容旧 CF-SUB 数据
-    if (!result.length) {
-        return await getLegacySources(env);
-    }
-
-    return [...new Set(result.map(x => String(x).trim()).filter(Boolean))];
-}
-
-async function getLegacySources(env) {
-    let data = '';
-    let legacyUrls = [];
-
-    if (env.KV) {
-        await 迁移地址列表(env, 'LINK.txt');
-        data = await env.KV.get('LINK.txt') || '';
-    }
-
-    if (!data) data = env.LINK || MainData || '';
-
-    if (env.LINKSUB) {
-        legacyUrls = await ADD(env.LINKSUB);
-    }
-
-    const all = await ADD(`${data}\n${legacyUrls.join('\n')}`);
-    return [...new Set(all.map(x => String(x).trim()).filter(Boolean))];
-}
-
 async function handleAdmin(request, env, runtime) {
     if (!env.KV) {
         return new Response(
@@ -760,6 +954,7 @@ async function handleAdmin(request, env, runtime) {
                     subName: normalizeName(data.settings?.subName) || 'CF-SUBS',
                     subApi: String(data.settings?.subApi || '').trim(),
                     subConfig: String(data.settings?.subConfig || '').trim(),
+                    siteLogo: String(data.settings?.siteLogo ?? old.siteLogo ?? '').trim(),
                     noAds: String(data.settings?.noAds || '').trim(),
 
                     // 保留旧配置
@@ -775,7 +970,7 @@ async function handleAdmin(request, env, runtime) {
                     fakeCode: String(data.settings?.fakeCode ?? old.fakeCode ?? '')
                 };
 
-                await env.KV.put('CONFIG.json', JSON.stringify(next));
+                await env.KV.put('CONFIG.json', serializeKVJson(next));
                 return jsonResponse({ ok: true, adminPath: next.adminPath });
             }
 
@@ -798,7 +993,7 @@ async function handleAdmin(request, env, runtime) {
                     updatedAt: new Date().toISOString()
                 };
 
-                await env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
+                await env.KV.put(`${SUB_PREFIX}${id}`, serializeKVJson(item));
                 return jsonResponse({ ok: true, sub: item });
             }
 
@@ -823,7 +1018,7 @@ async function handleAdmin(request, env, runtime) {
                     updatedAt: new Date().toISOString()
                 };
 
-                await env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
+                await env.KV.put(`${SUB_PREFIX}${id}`, serializeKVJson(item));
                 return jsonResponse({ ok: true, sub: item });
             }
 
@@ -845,7 +1040,7 @@ async function handleAdmin(request, env, runtime) {
                     const item = byId.get(id);
                     item.order = index;
                     item.updatedAt = new Date(now + index).toISOString();
-                    return env.KV.put(`${SUB_PREFIX}${id}`, JSON.stringify(item));
+                    return env.KV.put(`${SUB_PREFIX}${id}`, serializeKVJson(item));
                 }));
 
                 return jsonResponse({ ok: true, ids });
@@ -863,7 +1058,7 @@ async function handleAdmin(request, env, runtime) {
                 await Promise.all(affected.map(item => {
                     item.subs = item.subs.filter(x => x !== id);
                     item.updatedAt = new Date().toISOString();
-                    return env.KV.put(`${URL_PREFIX}${item.url}`, JSON.stringify(item));
+                    return env.KV.put(`${URL_PREFIX}${item.url}`, serializeKVJson(item));
                 }));
 
                 return jsonResponse({ ok: true });
@@ -871,7 +1066,6 @@ async function handleAdmin(request, env, runtime) {
 
             if (data.type === 'url_create') {
                 const name = normalizeName(data.name);
-                const mode = data.mode === 'custom' ? 'custom' : 'random';
                 let token = normalizeToken(data.url || data.token);
                 const selected = Array.isArray(data.subs)
                     ? [...new Set(data.subs.map(String))]
@@ -880,15 +1074,12 @@ async function handleAdmin(request, env, runtime) {
                 if (!validName(name)) return new Response('链接名称不能为空且不能超过 80 个字符', { status: 400 });
                 if (await isTokenNameUsed(env, name)) return new Response('链接名称已存在，不能重名', { status: 409 });
 
-                if (mode === 'custom') {
-                    if (!validCustomToken(token)) {
-                        return new Response('自定义 URL 只能使用 3-80 位字母、数字、下划线和短横线', { status: 400 });
-                    }
-                    if (await getToken(env, token)) {
-                        return new Response('URL 已存在，请使用其他 URL', { status: 409 });
-                    }
-                } else {
-                    token = await makeRandomToken(env, 6);
+                if (!token) token = await makeRandomToken(env, runtime.adminPath);
+                if (!validCustomToken(token, runtime.adminPath)) {
+                    return new Response('订阅路径不能为空，不能包含 /、\\、?、# 或控制字符，也不能使用系统保留路径', { status: 400 });
+                }
+                if (await getToken(env, token)) {
+                    return new Response('URL 已存在，请使用其他 URL', { status: 409 });
                 }
 
                 const validSubs = [];
@@ -908,13 +1099,14 @@ async function handleAdmin(request, env, runtime) {
                     updatedAt: new Date().toISOString()
                 };
 
-                await env.KV.put(`${URL_PREFIX}${token}`, JSON.stringify(item));
+                await env.KV.put(`${URL_PREFIX}${token}`, serializeKVJson(item));
                 return jsonResponse({ ok: true, url: item });
             }
 
             if (data.type === 'url_update') {
                 const oldToken = normalizeToken(data.oldUrl || data.oldToken || data.url || data.token);
-                const newToken = normalizeToken(data.newUrl || data.newToken || data.url || data.token);
+                let newToken = normalizeToken(data.newUrl ?? data.newToken ?? data.url ?? data.token);
+                if (!newToken) newToken = await makeRandomToken(env, runtime.adminPath);
                 const old = await getToken(env, oldToken);
                 if (!old) return new Response('URL 不存在', { status: 404 });
 
@@ -924,8 +1116,8 @@ async function handleAdmin(request, env, runtime) {
                     : [];
 
                 if (!validName(name)) return new Response('链接名称不能为空且不能超过 80 个字符', { status: 400 });
-                if (!validCustomToken(newToken)) {
-                    return new Response('URL 只能使用 3-80 位字母、数字、下划线和短横线', { status: 400 });
+                if (!validCustomToken(newToken, runtime.adminPath)) {
+                    return new Response('订阅路径不能包含 /、\\、?、# 或控制字符，也不能使用系统保留路径', { status: 400 });
                 }
                 if (await isTokenNameUsed(env, name, oldToken)) return new Response('链接名称已存在，不能重名', { status: 409 });
 
@@ -950,10 +1142,10 @@ async function handleAdmin(request, env, runtime) {
 
                 // URL 本身发生变化时，迁移 KV Key，确保旧地址立即失效、新地址立即生效。
                 if (newToken !== oldToken) {
-                    await env.KV.put(`${URL_PREFIX}${newToken}`, JSON.stringify(item));
+                    await env.KV.put(`${URL_PREFIX}${newToken}`, serializeKVJson(item));
                     await env.KV.delete(`${URL_PREFIX}${oldToken}`);
                 } else {
-                    await env.KV.put(`${URL_PREFIX}${oldToken}`, JSON.stringify(item));
+                    await env.KV.put(`${URL_PREFIX}${oldToken}`, serializeKVJson(item));
                 }
 
                 return jsonResponse({ ok: true, url: item, oldUrl: oldToken });
@@ -1010,6 +1202,7 @@ async function getConfig(env) {
         subName: 'CF-SUBS',
         subApi: '',
         subConfig: '',
+        siteLogo: '',
         noAds: '',
         user: '',
         pass: '',
@@ -1023,8 +1216,8 @@ async function getConfig(env) {
     if (!env.KV) return defaults;
 
     try {
-        const raw = await env.KV.get('CONFIG.json');
-        return raw ? { ...defaults, ...JSON.parse(raw) } : defaults;
+        const config = await getKVJson(env, 'CONFIG.json');
+        return config ? { ...defaults, ...config } : defaults;
     } catch (e) {
         return defaults;
     }
@@ -1038,6 +1231,62 @@ function jsonResponse(data, status = 200) {
             'Cache-Control': 'no-store'
         }
     });
+}
+
+function serializeInlineJson(value) {
+    return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, character => ({
+        '<': '\\u003c',
+        '>': '\\u003e',
+        '&': '\\u0026',
+        '\u2028': '\\u2028',
+        '\u2029': '\\u2029'
+    })[character]);
+}
+
+const KV_JSON_CAMEL_KEYS = {
+    ADMINPATH: 'adminPath',
+    CREATEDAT: 'createdAt',
+    FAKECODE: 'fakeCode',
+    FAKEMODE: 'fakeMode',
+    FAKEURL: 'fakeUrl',
+    FAKEURL302: 'fakeUrl302',
+    NOADS: 'noAds',
+    SITELOGO: 'siteLogo',
+    SUBAPI: 'subApi',
+    SUBCONFIG: 'subConfig',
+    SUBNAME: 'subName',
+    UPDATEDAT: 'updatedAt'
+};
+
+function transformKVJsonKeys(value, transformKey) {
+    if (Array.isArray(value)) return value.map(item => transformKVJsonKeys(item, transformKey));
+    if (!value || typeof value !== 'object') return value;
+
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+        transformKey(key),
+        transformKVJsonKeys(item, transformKey)
+    ]));
+}
+
+function serializeKVJson(value) {
+    return JSON.stringify(transformKVJsonKeys(value, key => key.toUpperCase()));
+}
+
+function normalizeKVJson(value) {
+    return transformKVJsonKeys(value, key => {
+        if (key !== key.toUpperCase()) return key;
+        return KV_JSON_CAMEL_KEYS[key] || key.toLowerCase();
+    });
+}
+
+async function getKVJson(env, key) {
+    const raw = await env.KV.get(key);
+    if (raw === null) return null;
+
+    const value = normalizeKVJson(JSON.parse(raw));
+    const uppercaseValue = serializeKVJson(value);
+    if (uppercaseValue !== raw) await env.KV.put(key, uppercaseValue);
+    return value;
 }
 
 /* =========================================================
@@ -1109,7 +1358,13 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
     }
 
     const sourceToken = new URL(request.url).searchParams.get('sourceToken') || token || '';
-    const conversionSeed = `${new URL(request.url).origin}/${await MD5MD5(runtime.fakeToken)}?token=${encodeURIComponent(runtime.fakeToken)}${sourceToken ? `&sourceToken=${encodeURIComponent(sourceToken)}` : ''}`;
+    let conversionOrigin = new URL(request.url).origin;
+    if (env.SUBSOURCE_URL) {
+        try {
+            conversionOrigin = new URL(env.SUBSOURCE_URL).origin;
+        } catch (error) {}
+    }
+    const conversionSeed = `${conversionOrigin}/${await MD5MD5(runtime.fakeToken)}?token=${encodeURIComponent(runtime.fakeToken)}${sourceToken ? `&sourceToken=${encodeURIComponent(sourceToken)}` : ''}`;
     let 订阅转换URL = conversionSeed;
     let 追加UA = 'v2rayn';
     const requestUrl = new URL(request.url);
@@ -1285,7 +1540,10 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
 
             return new Response(contentFb, { headers: responseHeaders });
         } catch (fallbackError) {
-            return new Response(base64Data, { headers: responseHeaders });
+            return new Response(
+                '订阅格式转换失败：转换服务无法访问当前订阅源，请检查转换服务是否能访问此订阅地址。',
+                { status: 502, headers: responseHeaders }
+            );
         }
     }
 }
@@ -1310,11 +1568,12 @@ async function ADD(envadd) {
 }
 
 // ================== 原生页面兜底 ==================
-async function nginx(titleName) {
+async function nginx(titleName, siteLogo = '') {
     return `<!DOCTYPE html>
 <html>
 <head>
 <title>${escapeHTML(titleName)}</title>
+${faviconTag(siteLogo)}
 <style>
     body { width: 35em; margin: 0 auto; font-family: Tahoma, Verdana, Arial, sans-serif; }
 </style>
@@ -1418,7 +1677,7 @@ function clashFix(content) {
 }
 
 // 代理模式自动替换 HTML 标题
-async function proxyURL(proxyURL, url, titleName) {
+async function proxyURL(proxyURL, url, titleName, siteLogo = '') {
     const URLs = await ADD(proxyURL);
     const fullURL = URLs[Math.floor(Math.random() * URLs.length)];
     let parsedURL = new URL(fullURL);
@@ -1441,6 +1700,7 @@ async function proxyURL(proxyURL, url, titleName) {
         } else {
             html = title + html;
         }
+        html = injectFavicon(html, siteLogo);
         let newResponse = new Response(html, {
             status: response.status,
             statusText: response.statusText,
@@ -1512,17 +1772,6 @@ async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
 
 function isValidBase64(str) { const v = String(str || '').replace(/\s/g, ''); return v.length >= 4 && v.length % 4 === 0 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(v); }
 
-async function 迁移地址列表(env, txt = 'ADD.txt') {
-    const 旧数据 = await env.KV.get(`/${txt}`);
-    const 新数据 = await env.KV.get(txt);
-    if (旧数据 && !新数据) {
-        await env.KV.put(txt, 旧数据);
-        await env.KV.delete(`/${txt}`);
-        return true;
-    }
-    return false;
-}
-
 function getCookie(request, name) {
     const cookie = request.headers.get('Cookie') || '';
     const cookies = cookie.split(';').map(item => item.trim());
@@ -1534,28 +1783,99 @@ function getCookie(request, name) {
     return '';
 }
 
+function faviconTag(value) {
+    const logoUrl = String(value || '').trim();
+    if (!logoUrl) return '';
+
+    try {
+        const parsedUrl = new URL(logoUrl);
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') return '';
+        return `<link rel="icon" href="${escapeHTML(parsedUrl.href)}">`;
+    } catch (e) {
+        return '';
+    }
+}
+
+function injectFavicon(html, value) {
+    const tag = faviconTag(value);
+    if (!tag) return html;
+
+    const withoutExistingIcons = String(html).replace(
+        /<link\b[^>]*\brel\s*=\s*(['"])(?:shortcut\s+)?icon\1[^>]*>/gi,
+        ''
+    );
+    if (/<head\b[^>]*>/i.test(withoutExistingIcons)) {
+        return withoutExistingIcons.replace(/<head\b[^>]*>/i, match => match + tag);
+    }
+
+    const htmlTag = withoutExistingIcons.match(/<html\b[^>]*>/i);
+    if (htmlTag) {
+        return withoutExistingIcons.replace(htmlTag[0], `${htmlTag[0]}<head>${tag}</head>`);
+    }
+    return `${tag}${withoutExistingIcons}`;
+}
+
 function escapeHTML(text = '') {
     return String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
-async function getAdminSessionValue(user, pass, token) {
+async function getAdminSessionValue(user, pass, issuedAt) {
     if (!user || !pass) return '';
-    return await MD5MD5(`${user}:${pass}:${token}:admin-login`);
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(pass),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+    const payload = `${ADMIN_SESSION_CONTEXT}:${user}:admin-login:${issuedAt}`;
+    const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(payload)));
+    const signatureHex = Array.from(signature, byte => byte.toString(16).padStart(2, '0')).join('');
+    return `${issuedAt}.${signatureHex}`;
 }
 
 function isAdminLoginEnabled(user, pass) { return !!(user && pass); }
 
-async function isAdminLoggedIn(request, token, user, pass) {
-    const session = await getAdminSessionValue(user, pass, token);
-    return session ? getCookie(request, 'CF_SUB_ADMIN') === session : false;
+async function isAdminLoggedIn(request, user, pass) {
+    const session = getCookie(request, 'CF_SUB_ADMIN');
+    const [issuedAtValue, signature, extra] = session.split('.');
+    const issuedAt = Number(issuedAtValue);
+    const now = Date.now();
+
+    if (
+        !user ||
+        !pass ||
+        !signature ||
+        extra !== undefined ||
+        !Number.isSafeInteger(issuedAt) ||
+        issuedAt > now ||
+        now - issuedAt > ADMIN_SESSION_MAX_AGE_SECONDS * 1000
+    ) {
+        return false;
+    }
+
+    const expectedSession = await getAdminSessionValue(user, pass, issuedAt);
+    return constantTimeEqual(signature, expectedSession.split('.')[1]);
+}
+
+function constantTimeEqual(value, expected) {
+    if (value.length !== expected.length) return false;
+
+    let difference = 0;
+    for (let index = 0; index < value.length; index++) {
+        difference |= value.charCodeAt(index) ^ expected.charCodeAt(index);
+    }
+    return difference === 0;
 }
 
 function buildAdminCookie(value, url) {
     const secure = url.protocol === 'https:' ? '; Secure' : '';
-    return `CF_SUB_ADMIN=${encodeURIComponent(value)}; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax${secure}`;
+    return `CF_SUB_ADMIN=${encodeURIComponent(value)}; Max-Age=${ADMIN_SESSION_MAX_AGE_SECONDS}; Path=/; HttpOnly; SameSite=Lax${secure}`;
 }
 
-async function handleAdminLogin(request, url, token, user, pass) {
+async function handleAdminLogin(request, url, user, pass, siteLogo = '') {
     let inputUser = '';
     let inputPass = '';
     try {
@@ -1563,13 +1883,13 @@ async function handleAdminLogin(request, url, token, user, pass) {
         inputUser = String(form.get('username') || '');
         inputPass = String(form.get('password') || '');
     } catch (e) {
-        return new Response(renderLoginPage(url, '登录请求格式不正确'), { status: 400, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
+        return new Response(renderLoginPage(url, '登录请求格式不正确', siteLogo), { status: 400, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
     }
     if (inputUser === user && inputPass === pass) {
-        const session = await getAdminSessionValue(user, pass, token);
+        const session = await getAdminSessionValue(user, pass, Date.now());
         return new Response('', { status: 302, headers: { 'Location': url.pathname, 'Set-Cookie': buildAdminCookie(session, url), 'Cache-Control': 'no-store' } });
     }
-    return new Response(renderLoginPage(url, '用户名或密码错误'), { status: 401, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
+    return new Response(renderLoginPage(url, '用户名或密码错误', siteLogo), { status: 401, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 // ==================== UI 样式与渲染模块 ====================
@@ -1797,13 +2117,14 @@ function renderToolScripts(includeEditor = false) {
     </script>`;
 }
 
-function renderLoginPage(url, error = '') {
+function renderLoginPage(url, error = '', siteLogo = '') {
     return `<!DOCTYPE html>
 <html>
 <head>
 <title>${escapeHTML(FileName)}管理面板</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${faviconTag(siteLogo)}
 <style>
 ${getToolStyles()}
 .login-btn { display: block; width: 100%; max-width: 280px; min-height: 44px; margin: 28px auto 6px; background: #2f3338; border: 1px solid #343a40; border-radius: 12px; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; }
@@ -1864,7 +2185,7 @@ function renderGuestPage(url, guest, guestName = '', siteLogo = '') {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHTML(guestName ? `${guestName} 聚合订阅` : '聚合订阅')}</title>${siteLogo?`<link rel="icon" href="${escapeHTML(siteLogo)}">`:''}
+<title>${escapeHTML(guestName ? `${guestName} 聚合订阅` : '聚合订阅')}</title>${faviconTag(siteLogo)}
 <style>
 ${getSubUIStyles()}
 .guest-shell{max-width:1100px;padding-top:0!important}.guest-header{margin:0 -28px 18px;padding:28px;border-bottom:1px solid rgba(120,130,140,.18)}
@@ -1928,19 +2249,24 @@ function renderAdminPage(url, env, subs, tokens, settings, status) {
 <title>${escapeHTML(settings.subName)}管理面板</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${faviconTag(settings.siteLogo)}
 <style>
 ${getToolStyles()}
+.url-path-control{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.url-path-control input{grid-column:1;grid-row:1;min-width:0;width:auto}.url-path-control .small-note{grid-column:1/-1;grid-row:2;min-width:0;margin:0}.url-path-control .url-uuid-button{grid-column:2;grid-row:1}
+@media(max-width:600px){.url-path-control input{grid-column:1/-1;grid-row:1}.url-path-control .small-note{grid-column:1;grid-row:2}.url-path-control .url-uuid-button{grid-column:2;grid-row:2;align-self:center}}
 .admin-shell{max-width:1100px;padding-top:0!important}.admin-header{margin:0 -28px 18px;padding:28px;border-bottom:1px solid rgba(120,130,140,.18)}
 .sub-grid{display:grid;gap:10px}.sub-row{border:1px solid rgba(229,229,223,.6);border-radius:14px;padding:14px;background:rgba(255,255,255,.5);color:inherit;box-shadow:0 3px 14px rgba(50,90,70,.04);transition:transform .2s,box-shadow .2s,border-color .2s}.sub-row:hover{transform:translateY(-1px);box-shadow:0 7px 20px rgba(50,90,70,.08)}
-.sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.sub-name{font-weight:700;font-size:15px;color:inherit}.sub-count{color:#888;font-size:12px;margin-top:3px}.source-box{margin-top:10px;padding:10px;border-radius:10px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}.token-url{color:#1f4b99;word-break:break-all;margin-top:10px}.chip{display:inline-block;padding:4px 9px;margin:2px 4px 2px 0;border-radius:9px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}.check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}.inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.small-note{font-size:12px;color:#888;margin-top:6px}.edit-button{background:#fff!important;color:#222!important;border-color:#c8c8c0!important;min-height:34px;padding:7px 14px}.edit-button:hover{background:#f1f3f5!important;border-color:#bfc3c8!important}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.panel-head .section-title{margin-bottom:0}.config-value{margin-top:10px;padding:10px 12px;border:1px solid rgba(229,229,223,.7);border-radius:10px;background:rgba(250,250,250,.65);font-size:13px;word-break:break-all;white-space:pre-wrap}
-@media(max-width:600px){.inline-row{grid-template-columns:1fr}.admin-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.admin-header{margin:0 -18px 16px;padding:22px 18px 20px}.admin-header>div:last-child{width:100%;display:grid!important;grid-template-columns:1fr 1fr 1fr;gap:8px}.admin-header>div:last-child>*{width:100%}.sub-head .actions{width:100%}.sub-head .actions button{flex:1}}
+.sub-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.sub-head-main{display:flex;align-items:center;gap:12px;flex:1;min-width:0}.sub-name{font-weight:700;font-size:15px;color:inherit;word-break:break-word}.sub-count{color:#888;font-size:12px;word-break:break-word;margin-left:auto}.source-box{margin-top:10px;padding:10px;border-radius:10px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}.token-url{color:#1f4b99;word-break:break-all;margin-top:10px}.chip{display:inline-block;padding:4px 9px;margin:2px 4px 2px 0;border-radius:9px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}.check-list{display:grid;gap:8px;max-height:230px;overflow:auto;border:1px solid rgba(207,207,200,.6);padding:10px;border-radius:10px}.inline-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.small-note{font-size:12px;color:#888;margin-top:6px}.edit-button{background:#fff!important;color:#222!important;border-color:#c8c8c0!important;min-height:34px;padding:7px 14px}.edit-button:hover{background:#f1f3f5!important;border-color:#bfc3c8!important}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.panel-head .section-title{margin-bottom:0}.config-value{margin-top:10px;padding:10px 12px;border:1px solid rgba(229,229,223,.7);border-radius:10px;background:rgba(250,250,250,.65);font-size:13px;word-break:break-all;white-space:pre-wrap}
+@media(max-width:600px){.inline-row{grid-template-columns:1fr}.admin-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.admin-header{margin:0 -18px 16px;padding:22px 18px 20px}.admin-header>div:last-child{width:100%;display:grid!important;grid-template-columns:1fr 1fr 1fr;gap:8px}.admin-header>div:last-child>*{width:100%}.sub-head{align-items:flex-start}.sub-head-main{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}.sub-head .actions{width:100%;display:flex;justify-content:flex-end;flex-wrap:wrap}.sub-head .actions button{flex:1 1 auto;min-width:94px}.sub-row{padding:10px}.sub-count{margin-left:0}} 
+@media(max-width:600px){.page.app-shell.admin-shell{width:calc(100% - 20px);margin:10px 10px 20px;padding:0 12px 20px;border-radius:18px}.admin-shell .admin-header{margin:0 -12px 14px;padding:18px 12px 16px}.admin-shell>.panel{padding:12px}.admin-shell .sub-row{padding:10px}} 
 @media(prefers-color-scheme:dark){.admin-shell{background:linear-gradient(135deg,rgba(1,5,6,.98) 0%,rgba(2,10,10,.96) 48%,rgba(0,54,35,.92) 100%)}.sub-row{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.10);color:#eee}.sub-count{color:#aaa}.source-box,.config-value{background:rgba(2,6,8,.55);border-color:rgba(255,255,255,.08);color:#ddd}.token-url{color:#64b5f6}.chip{background:rgba(100,181,246,.12);color:#90caf9}.check-list{background:rgba(20,20,20,.65);border-color:rgba(255,255,255,.12)}}
 .sub-grid{display:grid;gap:10px}
 .sub-row{border:1px solid rgba(229,229,223,.6);border-radius:12px;padding:12px;background:rgba(255,255,255,.5);color:inherit}
-.sub-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.sub-head .actions{margin-bottom:0}
-.sub-name{font-weight:700;font-size:15px;color:inherit}
-.sub-count{color:#888;font-size:12px;margin-top:3px}
+.sub-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.sub-head-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.sub-head .actions{margin-bottom:0;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.sub-name{font-weight:700;font-size:15px;color:inherit;word-break:break-word}
+.sub-count{color:#888;font-size:12px;word-break:break-word;margin-left:auto}
 .source-box{margin-top:9px;padding:9px;border-radius:9px;background:rgba(250,250,250,.75);font-size:12px;word-break:break-all;white-space:pre-wrap;max-height:120px;overflow:auto;color:inherit}
 .token-url{color:#1f4b99;word-break:break-all;margin-top:10px}
 .chip{display:inline-block;padding:3px 8px;margin:2px 3px 2px 0;border-radius:8px;background:rgba(31,75,153,.08);color:#1f4b99;font-size:12px}
@@ -1948,7 +2274,7 @@ ${getToolStyles()}
 .check-item{display:flex;align-items:center;gap:8px;font-weight:400;margin:0;cursor:grab;touch-action:none;user-select:none}
 .check-item input{width:18px;height:18px}
 .sortable-item{position:relative;cursor:grab;touch-action:none;user-select:none}
-.sortable-item .drag-handle{display:inline-flex;align-items:center;justify-content:center;width:22px;min-width:22px;color:#999;font-size:18px;line-height:1;cursor:grab}
+.sortable-item .drag-handle{display:inline-flex;align-items:center;justify-content:center;width:22px;min-width:22px;color:#999;font-size:18px;line-height:1;cursor:grab;flex-shrink:0}
 .sortable-item.dragging{opacity:.55;transform:scale(.99);box-shadow:0 8px 22px rgba(0,0,0,.16)}
 #url-sub-list .check-item{padding:8px 10px;border:1px solid rgba(207,207,200,.45);border-radius:10px;background:rgba(250,250,250,.55)}
 #url-sub-list .check-item.dragging{background:rgba(59,130,246,.08)}
@@ -2016,8 +2342,11 @@ ${getToolStyles()}
 
 <div class="field">
 <label>订阅链接路径</label>
-<input id="url-edit-value" type="text" placeholder="留空自动随机生成">
-<div class="small-note" id="urlModeNote">留空将自动生成类似 SURL 的 6 位随机路径；填写后使用自定义路径。</div>
+<div class="url-path-control">
+<input id="url-edit-value" type="text" placeholder="留空自动生成 UUID">
+<div class="small-note" id="urlModeNote">留空自动生成 UUID；可直接输入自定义路径，或点击按钮反复生成。</div>
+<button type="button" class="secondary url-uuid-button" onclick="generateUrlUUID()">随机UUID</button>
+</div>
 </div>
 
 <div class="field">
@@ -2128,6 +2457,11 @@ ${getToolStyles()}
 <textarea id="fake-code" style="min-height:180px" placeholder="在此粘贴网页 HTML 代码...">${escapeHTML(settings.fakeCode || '')}</textarea>
 </div>
 <div class="field">
+<label>标签页 Logo URL</label>
+<input id="site-logo" type="url" value="${escapeHTML(settings.siteLogo || '')}" placeholder="https://example.com/favicon.png">
+<div class="section-note">填写可访问的 HTTP 或 HTTPS 图标地址，用于全站标签页。</div>
+</div>
+<div class="field">
 <label>管理员后台路径</label>
 <input id="site-admin-path" type="text" value="${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}" placeholder="例如：admin 或 manage">
 <div class="section-note">只填写路径单词，不需要填写 /。修改后会立即退出后台并返回主页；例如改成 apple 后，使用 /apple 进入后台。</div>
@@ -2175,13 +2509,12 @@ ${getToolStyles()}
 
 <div id="sub-list" class="sub-grid" style="margin-top:12px;">
 ${subs.length ? subs.map(s => `
-<div class="sub-row">
+<div class="sub-row sortable-item" data-sort-id="${escapeHTML(s.id)}">
 <div class="sub-head">
-<div style="display:flex;align-items:flex-start;gap:8px;">
-<div>
+<span class="drag-handle" aria-hidden="true">⋮⋮</span>
+<div class="sub-head-main">
 <div class="sub-name">${escapeHTML(s.name)}</div>
-<div class="sub-count">${s.sources?.length || 0} 个来源 · 已启用</div>
-</div>
+<div class="sub-count">${s.sources?.length || 0} 个来源</div>
 </div>
 <div class="actions" style="margin-top:0;">
 <button type="button" class="edit-button" onclick="editSub('${escapeHTML(s.id)}')">编辑</button>
@@ -2240,8 +2573,8 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 </div>
 <button type="button" class="edit-button" onclick="openSubApiModal()">编辑</button>
 </div>
-<div class="status-indicator ${status.adminApiCss}" style="margin-top:10px;">${status.adminApiHtml}</div>
-<a class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
+<div id="subapi-status" class="status-indicator ${status.adminApiCss}" style="margin-top:10px;">${status.adminApiHtml}</div>
+<a id="subapi-url" class="link-url" href="${escapeHTML(status.finalApiUrl)}" target="_blank">${escapeHTML(status.finalApiUrl)}</a>
 </section>
 
 <section class="panel">
@@ -2252,8 +2585,8 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 </div>
 <button type="button" class="edit-button" onclick="openSubConfigModal()">编辑</button>
 </div>
-<div class="status-indicator ${status.adminConfigCss}" style="margin-top:10px;">${status.adminConfigHtml}</div>
-<a class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
+<div id="subconfig-status" class="status-indicator ${status.adminConfigCss}" style="margin-top:10px;">${status.adminConfigHtml}</div>
+<a id="subconfig-url" class="link-url" href="${escapeHTML(status.finalConfigUrl)}" target="_blank">${escapeHTML(status.finalConfigUrl)}</a>
 </section>
 
 <section class="panel">
@@ -2267,15 +2600,48 @@ ${subNames.length ? subNames.map(x => `<span class="chip">${escapeHTML(x)}</span
 <div class="config-value">${escapeHTML(settings.noAds || '未设置')}</div>
 </section>
 
+<section class="panel" style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:12px;margin-bottom:28px;">
+<div style="min-width:0;">
+<h2 class="section-title" style="margin:0;">备份与迁移</h2>
+<div class="section-note">备份与恢复当前 KV 中保存的配置、订阅和链接数据，适用于迁移和恢复。</div>
+</div>
+<a class="button secondary" href="/${escapeHTML(normalizeAdminPath(settings.adminPath) || DEFAULT_ADMIN_PATH)}/JSON">进入</a>
+</section>
+
 <div id="current-qrcode"></div>
 </main>
 
 <script>
-const SUBS = ${JSON.stringify(subs)};
-const TOKENS = ${JSON.stringify(tokens)};
+const SUBS = ${serializeInlineJson(subs)};
+const TOKENS = ${serializeInlineJson(tokens)};
 let editingSub = '';
 let editingUrlValue = '';
 
+
+function reorderSubListFromDOM(){
+ const box=document.getElementById('sub-list');
+ if(!box)return;
+ const orderedIds=[...box.querySelectorAll('.sortable-item')].map(function(item){return item.dataset.sortId;}).filter(Boolean);
+ if(!orderedIds.length || orderedIds.length!==SUBS.length)return;
+ const orderMap=new Map(orderedIds.map((id,index)=>[String(id),index]));
+ SUBS.sort(function(a,b){
+   const left=orderMap.get(String(a.id)) ?? Number.MAX_SAFE_INTEGER;
+   const right=orderMap.get(String(b.id)) ?? Number.MAX_SAFE_INTEGER;
+   return left-right;
+ });
+ fetch(window.location.pathname,{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({type:'sub_reorder',ids:orderedIds})
+ }).then(async function(res){
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'排序失败');
+   showToast('聚合节点排序已更新');
+ }).catch(function(error){
+   showToast(error.message||'排序失败');
+   renderSubList();
+ });
+}
 
 function renderSubList(){
  const box=document.getElementById('sub-list');
@@ -2288,13 +2654,12 @@ function renderSubList(){
    const name=escapeJS(s.name||'');
    const id=escapeJS(s.id||'');
    const count=s.sources?.length||0;
-   return '<div class="sub-row">'
+   return '<div class="sub-row sortable-item" data-sort-id="'+id+'">'
     +'<div class="sub-head">'
-    +'<div style="display:flex;align-items:flex-start;gap:8px;">'
-    +'<div>'
+    +'<span class="drag-handle" aria-hidden="true">⋮⋮</span>'
+    +'<div class="sub-head-main">'
     +'<div class="sub-name">'+name+'</div>'
-    +'<div class="sub-count">'+count+' 个来源 · 已启用</div>'
-    +'</div>'
+    +'<div class="sub-count">'+count+' 个来源</div>'
     +'</div>'
     +'<div class="actions" style="margin-top:0;">'
     +'<button type="button" class="edit-button" onclick="editSub(\\''+id+'\\')">编辑</button>'
@@ -2303,6 +2668,7 @@ function renderSubList(){
     +'</div>'
     +'</div>';
  }).join('');
+ enableLongPressSort(box,'.sortable-item',reorderSubListFromDOM);
 }
 function renderUrlList(){
  const box=document.getElementById('url-list');
@@ -2416,6 +2782,7 @@ function saveConfig(button,type){
        fakeUrl:document.getElementById('fake-url')?.value||'',
        fakeUrl302:document.getElementById('fake-url302')?.value||'',
        fakeCode:document.getElementById('fake-code')?.value||'',
+    siteLogo:document.getElementById('site-logo')?.value.trim()||'',
        adminPath:siteAdminPath
      }
    })
@@ -2660,7 +3027,7 @@ function openUrlCreate(){
  document.getElementById('url-edit-name').value='';
  document.getElementById('url-edit-value').value='';
  document.getElementById('url-edit-value').disabled=false;
- document.getElementById('urlModeNote').textContent='留空将自动生成类似 SURL 的 6 位随机路径；填写后使用自定义路径。';
+ document.getElementById('urlModeNote').textContent='留空自动生成 UUID；可直接输入自定义路径，或点击按钮反复生成。';
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs([]);
  document.getElementById('urlModal').style.display='flex';
@@ -2676,10 +3043,25 @@ function editUrl(token){
  document.getElementById('url-edit-name').value=item.name||'';
  document.getElementById('url-edit-value').value=item.url||'';
  document.getElementById('url-edit-value').disabled=false;
- document.getElementById('urlModeNote').textContent='可直接修改订阅链接路径；保存后旧路径立即失效，新路径立即生效。';
+ document.getElementById('urlModeNote').textContent='保留原路径即可不变；也可输入自定义路径、留空生成 UUID，或点击按钮反复生成。';
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs(item.subs||[]);
  document.getElementById('urlModal').style.display='flex';
+}
+
+function generateUrlUUID(){
+ const input=document.getElementById('url-edit-value');
+ if(!input || input.disabled)return;
+ const bytes=new Uint8Array(16);
+ if(window.crypto && window.crypto.getRandomValues){
+  window.crypto.getRandomValues(bytes);
+ }else{
+  for(let index=0;index<bytes.length;index++)bytes[index]=Math.floor(Math.random()*256);
+ }
+ bytes[6]=(bytes[6]&15)|64;
+ bytes[8]=(bytes[8]&63)|128;
+ const hex=Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');
+ input.value=hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
 }
 
 async function saveUrl(){
@@ -2767,7 +3149,27 @@ document.querySelectorAll('.modal-overlay').forEach(function(modal){
  });
 });
 
+async function refreshBackendStatus(){
+ try{
+    const statusUrl=window.location.pathname+'/status';
+     const response=await fetch(statusUrl,{cache:'no-store'});
+     if(!response.ok)return;
+     const status=await response.json();
+     const subApiStatus=document.getElementById('subapi-status');
+     const subApiUrl=document.getElementById('subapi-url');
+     const subConfigStatus=document.getElementById('subconfig-status');
+     const subConfigUrl=document.getElementById('subconfig-url');
+     if(subApiStatus){subApiStatus.className='status-indicator '+status.adminApiCss;subApiStatus.innerHTML=status.adminApiHtml;}
+     if(subApiUrl){subApiUrl.href=status.finalApiUrl;subApiUrl.textContent=status.finalApiUrl;}
+     if(subConfigStatus){subConfigStatus.className='status-indicator '+status.adminConfigCss;subConfigStatus.innerHTML=status.adminConfigHtml;}
+     if(subConfigUrl){subConfigUrl.href=status.finalConfigUrl;subConfigUrl.textContent=status.finalConfigUrl;}
+ }catch(error){}
+}
+
 switchFakeMode();
+refreshSubscriptionUI();
+refreshBackendStatus();
+window.setInterval(refreshBackendStatus,10000);
 </script>
 </body>
 </html>`;
