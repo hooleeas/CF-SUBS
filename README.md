@@ -36,7 +36,7 @@ SUB 本身只负责保存和组织节点来源，**不会直接生成公开订�
 
 - 自定义订阅链接路径
 - 留空自动生成随机路径
-- 类 SURL 风格的随机 6 位路径
+- 留空时自动生成 UUID 路径
 - 修改订阅链接路径
 - 修改订阅链接名称
 - 修改绑定的 SUB
@@ -284,21 +284,11 @@ KV
 
 ---
 
-## 🔐 环境变量
+## 🔐 Cloudflare 配置
 
-### 当前版本没有必填环境变量
+CF-SUB 不依赖 Cloudflare 后台的 Environment Variables。无需配置 `USER`、`PASS`、`URL`、`URL302`、`CODE`、`SUBUPTIME`、`WARP`、`SUBSOURCE_URL` 或 `TOKEN`。
 
-与旧版本不同，当前版本**不再要求配置 `TOKEN` 环境变量**。
-
-Cloudflare 的：
-
-```text
-环境变量 / Variables
-```
-
-可以保持为空。
-
-管理员入口路径、管理员账号密码以及其他主要配置均可以在网页后台完成。
+运行时只需配置一个 KV Namespace Binding：绑定名称填写 `KV`，并在 CF-SUB 后台管理所有应用配置。管理员账号密码、主页模式和订阅设置保存在 KV 的 `CONFIG.json` 中。
 
 ---
 
@@ -394,6 +384,22 @@ CF-SUBS
 ```
 
 一个 SUB 可以保存多个订阅地址和自建节点。
+
+每个 SUB 还可以独立设置推荐更新时间：
+
+- `UPDATE`：分钟数，默认 `60`
+- `UPDATE_ENABLE`：是否向客户端推荐自动更新，默认 `true`
+
+KV 中保存为全大写字段：
+
+```json
+{
+  "UPDATE": 60,
+  "UPDATE_ENABLE": true
+}
+```
+
+关闭 `UPDATE_ENABLE` 只会关闭推荐自动更新时间，不会修改 `UPDATE` 的分钟数。旧 SUB 缺少这两个字段时，按“开启 + 60 分钟”处理。
 
 ---
 
@@ -589,6 +595,20 @@ URL:<path>
 ```
 
 用于保存公开订阅链接配置。
+
+`SUB:<id>` 中的更新时间字段示例：
+
+```json
+{
+  "ID": "示例ID",
+  "NAME": "日本",
+  "SOURCES": ["https://example.com/sub"],
+  "UPDATE": 60,
+  "UPDATE_ENABLE": true
+}
+```
+
+`UPDATE` 的单位始终是分钟，生成订阅响应时才会转换为秒；当 `UPDATE_ENABLE` 为 `false` 时，不会发送 `Profile-Update-Interval`。
 
 这种结构允许：
 

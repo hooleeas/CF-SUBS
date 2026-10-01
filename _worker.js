@@ -22,8 +22,6 @@ const ADMIN_SESSION_CONTEXT = 'CF-SUBS-ADMIN-SESSION';
 const ADMIN_SESSION_MAX_AGE_SECONDS = 604800;
 let FileName = 'CF-SUBS';
 const SUB_UPDATE_INTERVAL = 6;
-let total = 99;
-let timestamp = 4102329600000;
 
 // ================= 全局默认配置 =================
 const defaultSubConverter = "SUBAPI.cmliussss.net";
@@ -35,6 +33,16 @@ const SUB_PREFIX = 'SUB:';
 const URL_PREFIX = 'URL:';
 const ID_CHARS = 'ABCDEFGHJKMNPQRSTWXYZabcdefghijkmnpqrstwxyz2345678';
 const DEFAULT_ADMIN_PATH = 'admin';
+const DEFAULT_SUB_UPDATE_MINUTES = 60;
+
+function normalizeUpdateMinutes(value) {
+    const minutes = Number(value);
+    return Number.isFinite(minutes) && minutes >= 0 ? Math.floor(minutes) : DEFAULT_SUB_UPDATE_MINUTES;
+}
+
+function normalizeUpdateEnabled(value) {
+    return value === undefined || value === null ? true : value === true || value === 'true' || value === 1 || value === '1';
+}
 
 export default {
     async fetch(request, env) {
@@ -61,8 +69,6 @@ async function handleRequest(request, env) {
         // SUBAPI 转换内部请求：记录原始订阅 URL，确保转换时只使用该 URL 绑定的 SUB
         const conversionSourceToken = url.searchParams.get('sourceToken') || '';
 
-        // 每次请求重新从环境变量读取，保持 CF-SUB 原有变量行为
-        // 不再使用 TOKEN 环境变量。
         let adminUser = '';
         let adminPass = '';
         let adminPath = DEFAULT_ADMIN_PATH;
@@ -89,7 +95,6 @@ async function handleRequest(request, env) {
                     subConfig = kvConfig.subConfig || '';
                     config_noAds = kvConfig.noAds || '';
 
-                    // 原 CF-SUB 配置仍然兼容
                     adminUser = kvConfig.user || '';
                     adminPass = kvConfig.pass || '';
                     adminPath = normalizeAdminPath(kvConfig.adminPath) || DEFAULT_ADMIN_PATH;
@@ -128,10 +133,6 @@ async function handleRequest(request, env) {
         currentDate.setHours(0, 0, 0, 0);
         const timeTemp = Math.ceil(currentDate.getTime() / 1000);
         const fakeToken = await MD5MD5(`${INTERNAL_TOKEN_SEED}${timeTemp}`);
-
-        let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
-        total = total * 1099511627776;
-        let expire = Math.floor(timestamp / 1000);
         const isProxyClientUA = [
             'clash', 'meta', 'mihomo', 'sing-box', 'singbox', 'surge',
             'quantumult', 'loon', 'nekobox', 'v2rayn', 'v2rayng',
@@ -230,7 +231,7 @@ async function handleRequest(request, env) {
             if (fakeMode === '1' && fakeUrl) {
                 try {
                     return await proxyURL(fakeUrl, url, FileName, siteLogo);
-                } catch (e) {}
+                } catch {}
             } else if (fakeMode === '2' && fakeUrl302) {
                 return Response.redirect(fakeUrl302, 302);
             } else if (fakeMode === '3' && fakeCode && fakeCode.trim() !== '') {
@@ -257,50 +258,39 @@ async function handleRequest(request, env) {
         // ==================== 获取当前入口的来源 ====================
         let selectedSources = [];
 
+        let subscriptionData = tokenData;
         if (tokenData) {
             // 新架构：URL -> 多个 SUB -> 多个来源
             selectedSources = await getSourcesForToken(env, tokenData);
-        } else {
-            // 兼容旧 CF-SUB：
-            // auto = 所有 SUBS；fake = 所有 SUBS
-            if (isFakeTokenRequest && conversionSourceToken) {
-                const sourceTokenData = await getToken(env, conversionSourceToken);
-                if (sourceTokenData) {
-                    selectedSources = await getSourcesForToken(env, sourceTokenData);
-                }
+        } else if (isFakeTokenRequest && conversionSourceToken) {
+            const sourceTokenData = await getToken(env, conversionSourceToken);
+            if (sourceTokenData) {
+                subscriptionData = sourceTokenData;
+                selectedSources = await getSourcesForToken(env, sourceTokenData);
             }
         }
 
+        const updateSettings = await getUpdateSettingsForToken(env, subscriptionData) || subscriptionData || {};
+
         // ==================== 浏览器 UI ====================
         if (
+            tokenData &&
             userAgent.includes('mozilla') &&
             !url.search &&
             !isProxyClientUA
         ) {
-            const status = await getBackendStatus(
-                effectiveSubConverter,
-                effectiveSubConfig,
-                effectiveSubProtocol,
-                hasCustomApi,
-                hasCustomConfig
+            return new Response(
+                renderGuestPage(
+                    url,
+                    tokenData.url,
+                    tokenData.name,
+                    siteLogo
+                ),
+                { headers: { 'Content-Type': 'text/html;charset=utf-8' } }
             );
-
-            // 新 URL：订阅页面
-            if (tokenData) {
-                return new Response(
-                    renderGuestPage(
-                        url,
-                        tokenData.url,
-                        tokenData.name,
-                        siteLogo
-                    ),
-                    { headers: { 'Content-Type': 'text/html;charset=utf-8' } }
-                );
-            }
-
         }
 
-        // ==================== 原 CF-SUB 核心订阅处理 ====================
+        // ==================== 生成订阅内容 ====================
         return await generateSubscription(
             request,
             env,
@@ -314,8 +304,8 @@ async function handleRequest(request, env) {
                 userAgentHeader,
                 config_noAds,
                 FileName,
-                UD,
-                expire
+                updateMinutes: normalizeUpdateMinutes(updateSettings.update),
+                updateEnabled: normalizeUpdateEnabled(updateSettings.updateEnable)
             },
             publicToken
         );
@@ -347,7 +337,7 @@ async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomCo
                     version: (await res.text()).trim().substring(0, 30)
                 };
             }
-        } catch (e) {}
+        } catch {}
         return { ok: false };
     }
 
@@ -362,7 +352,7 @@ async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomCo
             });
             clearTimeout(timeout);
             return res.ok;
-        } catch (e) {
+        } catch {
             return false;
         }
     }
@@ -502,7 +492,7 @@ async function getSub(env, id) {
     if (!env.KV || !id) return null;
     try {
         return await getKVJson(env, `${SUB_PREFIX}${id}`);
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -511,7 +501,7 @@ async function getToken(env, token) {
     if (!env.KV || !token) return null;
     try {
         return await getKVJson(env, `${URL_PREFIX}${token}`);
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -591,7 +581,7 @@ async function listKVEntries(env) {
                     formattedValue = JSON.stringify(JSON.parse(uppercaseValue), null, 2);
                     isJson = true;
                     rawValue = JSON.parse(uppercaseValue);
-                } catch (e) {
+                } catch {
                     rawValue = value;
                 }
             }
@@ -912,6 +902,24 @@ async function getSourcesForToken(env, tokenData) {
     return [...new Set(result.map(x => String(x).trim()).filter(Boolean))];
 }
 
+async function getUpdateSettingsForToken(env, tokenData) {
+    const ids = Array.isArray(tokenData?.subs) ? tokenData.subs : [];
+    for (const id of ids) {
+        const sub = await getSub(env, id);
+        if (sub) {
+            if (!Object.prototype.hasOwnProperty.call(sub, 'update') &&
+                !Object.prototype.hasOwnProperty.call(sub, 'updateEnable')) {
+                continue;
+            }
+            return {
+                update: sub.update,
+                updateEnable: sub.updateEnable
+            };
+        }
+    }
+    return null;
+}
+
 async function handleAdmin(request, env, runtime) {
     if (!env.KV) {
         return new Response(
@@ -973,6 +981,8 @@ async function handleAdmin(request, env, runtime) {
                     enabled: true,
                     order: Date.now(),
                     sources,
+                    update: normalizeUpdateMinutes(data.update),
+                    updateEnable: normalizeUpdateEnabled(data.updateEnable),
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
@@ -997,6 +1007,8 @@ async function handleAdmin(request, env, runtime) {
                     ...old,
                     name,
                     sources,
+                    update: normalizeUpdateMinutes(data.update),
+                    updateEnable: normalizeUpdateEnabled(data.updateEnable),
                     enabled: true,
                     order: Number.isFinite(Number(old.order)) ? Number(old.order) : Date.now(),
                     updatedAt: new Date().toISOString()
@@ -1079,6 +1091,8 @@ async function handleAdmin(request, env, runtime) {
                     url: token,
                     name,
                     subs: validSubs,
+                    update: normalizeUpdateMinutes(data.update),
+                    updateEnable: normalizeUpdateEnabled(data.updateEnable),
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
@@ -1121,6 +1135,8 @@ async function handleAdmin(request, env, runtime) {
                     url: newToken,
                     name,
                     subs: validSubs,
+                    update: normalizeUpdateMinutes(data.update),
+                    updateEnable: normalizeUpdateEnabled(data.updateEnable),
                     updatedAt: new Date().toISOString()
                 };
 
@@ -1166,7 +1182,6 @@ async function handleAdmin(request, env, runtime) {
     return new Response(
         renderAdminPage(
             new URL(request.url),
-            env,
             subs,
             tokens,
             settings,
@@ -1202,7 +1217,7 @@ async function getConfig(env) {
     try {
         const config = await getKVJson(env, 'CONFIG.json');
         return config ? { ...defaults, ...config } : defaults;
-    } catch (e) {
+    } catch {
         return defaults;
     }
 }
@@ -1239,7 +1254,8 @@ const KV_JSON_CAMEL_KEYS = {
     SUBAPI: 'subApi',
     SUBCONFIG: 'subConfig',
     SUBNAME: 'subName',
-    UPDATEDAT: 'updatedAt'
+    UPDATEDAT: 'updatedAt',
+    UPDATE_ENABLE: 'updateEnable'
 };
 
 function transformKVJsonKeys(value, transformKey) {
@@ -1253,7 +1269,7 @@ function transformKVJsonKeys(value, transformKey) {
 }
 
 function serializeKVJson(value) {
-    return JSON.stringify(transformKVJsonKeys(value, key => key.toUpperCase()));
+    return JSON.stringify(transformKVJsonKeys(value, key => key === 'updateEnable' ? 'UPDATE_ENABLE' : key.toUpperCase()));
 }
 
 function normalizeKVJson(value) {
@@ -1375,7 +1391,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
         req_data += 请求订阅响应内容[0].join('\n');
         订阅转换URL += '|' + 请求订阅响应内容[1];
 
-        // 原 CF-SUB：base64 模式下，对结构化订阅再做 mixed 转换
+        // Base64 模式下，对结构化订阅再做 mixed 转换
         if (
             订阅格式 === 'base64' &&
             !isSubConverterRequest &&
@@ -1397,7 +1413,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
                 if (!res.ok) throw new Error();
 
                 req_data += '\n' + atob(await res.text());
-            } catch (error) {
+            } catch {
                 try {
                     const fallbackU = buildSubUrl(
                         defaultSubConverter,
@@ -1412,7 +1428,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
                     });
 
                     if (res2.ok) req_data += '\n' + atob(await res2.text());
-                } catch (e) {}
+                } catch {}
             }
         }
     }
@@ -1421,7 +1437,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
         new TextEncoder().encode(req_data)
     );
 
-    // 原 CF-SUB NOADS
+    // 按配置过滤节点关键字
     let filteredLines = text.split('\n');
 
     if (runtime.config_noAds) {
@@ -1445,17 +1461,20 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
 
     try {
         base64Data = btoa(result);
-    } catch (e) {
+    } catch {
         base64Data = encodeBase64(result);
     }
 
     const responseHeaders = {
         'content-type': 'text/plain; charset=utf-8',
-        'Profile-Update-Interval': `${SUB_UPDATE_INTERVAL}`,
         'Profile-web-page-url': request.url.includes('?')
             ? request.url.split('?')[0]
             : request.url
     };
+
+    if (runtime.updateEnabled) {
+        responseHeaders['Profile-Update-Interval'] = `${runtime.updateMinutes * 60}`;
+    }
 
     if (订阅格式 === 'base64' || token === runtime.fakeToken) {
         return new Response(base64Data, { headers: responseHeaders });
@@ -1486,7 +1505,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
         }
 
         return new Response(content, { headers: responseHeaders });
-    } catch (error) {
+    } catch {
         try {
             const fallbackUrl = buildSubUrl(
                 defaultSubConverter,
@@ -1512,7 +1531,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
             }
 
             return new Response(contentFb, { headers: responseHeaders });
-        } catch (fallbackError) {
+        } catch {
             return new Response(
                 '订阅格式转换失败：转换服务无法访问当前订阅源，请检查转换服务是否能访问此订阅地址。',
                 { status: 502, headers: responseHeaders }
@@ -1522,7 +1541,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
 }
 
 /* =========================================================
- * 以下为原 CF-SUB 核心函数：保持原行为
+ * 订阅处理辅助函数
  * ======================================================= */
 
 function buildSubUrl(api, config, target, urlToConvert, protocol) {
@@ -1724,7 +1743,7 @@ async function getSUB(api, request, 追加UA, userAgentHeader) {
                 }
             }
         }
-    } catch (error) {
+    } catch {
     } finally {
         clearTimeout(timeout);
     }
@@ -1764,7 +1783,7 @@ function faviconTag(value) {
         const parsedUrl = new URL(logoUrl);
         if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') return '';
         return `<link rel="icon" href="${escapeHTML(parsedUrl.href)}">`;
-    } catch (e) {
+    } catch {
         return '';
     }
 }
@@ -1855,7 +1874,7 @@ async function handleAdminLogin(request, url, user, pass, siteLogo = '') {
         const form = await request.formData();
         inputUser = String(form.get('username') || '');
         inputPass = String(form.get('password') || '');
-    } catch (e) {
+    } catch {
         return new Response(renderLoginPage(url, '登录请求格式不正确', siteLogo), { status: 400, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store' } });
     }
     if (inputUser === user && inputPass === pass) {
@@ -1935,159 +1954,6 @@ function getToolStyles() {
             #current-qrcode { background: rgba(255, 255, 255, 0.9); }
         }
     `;
-}
-
-function renderLinkList(links) {
-    return `<div class="link-list">
-        ${links.map(([label, value]) => `
-            <div class="link-item">
-                <div class="link-label">${escapeHTML(label)}</div>
-                <a class="link-url" href="${escapeHTML(value)}" target="_blank">${escapeHTML(value)}</a>
-                <div class="actions">
-                    <button type="button" class="copy-btn" onclick="copySubscription(this)" data-url="${escapeHTML(value)}">复制</button>
-                    <button type="button" class="secondary hide-btn hidden" onclick="hideQrcode(this)">隐藏二维码</button>
-                </div>
-            </div>
-        `).join('')}
-    </div>`;
-}
-
-function renderToolScripts(includeEditor = false) {
-    return `<script>
-        let toastTimer;
-        function showToast(message) {
-            const toast = document.getElementById('copyNotice');
-            toast.textContent = message;
-            toast.style.display = 'block';
-            clearTimeout(toastTimer);
-            toastTimer = setTimeout(function () { toast.style.display = 'none'; }, 1500);
-        }
-        function copySubscription(button) {
-            navigator.clipboard.writeText(button.dataset.url).then(function () {
-                showToast('已复制到剪贴板');
-                showQrcode(button);
-                button.classList.add('hidden');
-                const hideBtn = button.closest('.actions').querySelector('.hide-btn');
-                if (hideBtn) hideBtn.classList.remove('hidden');
-            }).catch(function () { showToast('复制失败，请手动复制'); });
-        }
-        function showQrcode(button) {
-            const qrcodeDiv = document.getElementById('current-qrcode');
-            button.closest('.link-item').appendChild(qrcodeDiv);
-            qrcodeDiv.innerHTML = '';
-            qrcodeDiv.style.display = 'block';
-            new QRCode(qrcodeDiv, { text: button.dataset.url, width: 220, height: 220, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.Q });
-        }
-        function hideQrcode(button) {
-            const qrcodeDiv = document.getElementById('current-qrcode');
-            qrcodeDiv.style.display = 'none';
-            qrcodeDiv.innerHTML = '';
-            button.classList.add('hidden');
-            const copyBtn = button.closest('.actions').querySelector('.copy-btn');
-            if (copyBtn) copyBtn.classList.remove('hidden');
-        }
-
-        ${includeEditor ? `
-        function openSecurityModal() { document.getElementById('securityModal').style.display = 'flex'; }
-        function closeSecurityModal() { document.getElementById('securityModal').style.display = 'none'; }
-        
-        function openFakeModal() { document.getElementById('fakeModal').style.display = 'flex'; }
-        function closeFakeModal() { document.getElementById('fakeModal').style.display = 'none'; }
-        
-        function switchFakeMode() {
-            const mode = document.getElementById('fake-mode').value;
-            document.getElementById('fake-group-url').classList.add('hidden');
-            document.getElementById('fake-group-url302').classList.add('hidden');
-            document.getElementById('fake-group-code').classList.add('hidden');
-            
-            if (mode === '1') document.getElementById('fake-group-url').classList.remove('hidden');
-            if (mode === '2') document.getElementById('fake-group-url302').classList.remove('hidden');
-            if (mode === '3') document.getElementById('fake-group-code').classList.remove('hidden');
-        }
-
-        function saveConfig(button, type) {
-            const isSec = type === 'sec';
-            const isFake = type === 'fake';
-            const statusElem = document.getElementById(isSec ? 'secSaveStatus' : (isFake ? 'fakeSaveStatus' : 'configSaveStatus'));
-
-            const secPass = document.getElementById('sec-pass') ? document.getElementById('sec-pass').value : '';
-            const secPass2 = document.getElementById('sec-pass2') ? document.getElementById('sec-pass2').value : '';
-            if (isSec && secPass !== secPass2) { alert('两次输入的密码不一致！'); return; }
-
-            button.disabled = true;
-            const originalText = button.textContent;
-            button.textContent = '保存中...';
-
-            fetch(window.location.href, {
-                method: 'POST',
-                body: JSON.stringify({
-                    type: 'config',
-                    settings: {
-                        user: document.getElementById('sec-user') ? document.getElementById('sec-user').value : '',
-                        pass: secPass,
-                        adminPath: document.getElementById('site-admin-path') ? document.getElementById('site-admin-path').value : 'admin',
-                        subName: document.getElementById('config-subname') ? document.getElementById('config-subname').value : '',
-                        subApi: document.getElementById('config-subapi') ? document.getElementById('config-subapi').value : '',
-                        subConfig: document.getElementById('config-subconfig') ? document.getElementById('config-subconfig').value : '',
-                        noAds: document.getElementById('config-noads') ? document.getElementById('config-noads').value : '',
-                        fakeMode: document.getElementById('fake-mode') ? document.getElementById('fake-mode').value : '',
-                        fakeUrl: document.getElementById('fake-url') ? document.getElementById('fake-url').value : '',
-                        fakeUrl302: document.getElementById('fake-url302') ? document.getElementById('fake-url302').value : '',
-                        fakeCode: document.getElementById('fake-code') ? document.getElementById('fake-code').value : ''
-                    }
-                }),
-                headers: { 'Content-Type': 'application/json' }
-            }).then(function (res) {
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                return res.text();
-            }).then(function (res) {
-                return res.text().then(function (text) {
-                    let data = {};
-                    try { data = JSON.parse(text); } catch (e) {}
-                    statusElem.textContent = '已保存 ' + new Date().toLocaleString();
-                    statusElem.style.color = 'var(--coral, #2e7d32)';
-                    if (isSec && data.adminPath) {
-                        setTimeout(() => window.location.replace('/'), 300);
-                    } else {
-                        setTimeout(() => window.location.reload(), 500);
-                    }
-                });
-            }).catch(function (err) {
-                statusElem.textContent = '保存失败: 网络异常或超时';
-                statusElem.style.color = '#c62828';
-                console.error(err);
-            }).finally(function () {
-                button.disabled = false;
-                button.textContent = originalText;
-            });
-        }
-
-        function saveContent(button) {
-            const textarea = document.getElementById('content');
-            const statusElem = document.getElementById('saveStatus');
-            if (!textarea) return;
-            textarea.value = textarea.value.replace(/：/g, ':');
-            button.disabled = true;
-            button.textContent = '保存中...';
-            fetch(window.location.href, {
-                method: 'POST',
-                body: JSON.stringify({ type: 'content', content: textarea.value || '' }),
-                headers: { 'Content-Type': 'application/json' }
-            }).then(function (res) {
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                statusElem.textContent = '已保存 ' + new Date().toLocaleString();
-                statusElem.style.color = '#2e7d32';
-            }).catch(function (err) {
-                statusElem.textContent = '保存失败: 网络异常';
-                statusElem.style.color = '#c62828';
-                console.error(err);
-            }).finally(function () {
-                button.disabled = false;
-                button.textContent = '保存节点订阅';
-            });
-        }
-        ` : ''}
-    </script>`;
 }
 
 function renderLoginPage(url, error = '', siteLogo = '') {
@@ -2195,7 +2061,7 @@ function hideGuestQr(button){const item=button.closest('.guest-link-item');if(!i
  * 保持 CF-SUB 核心视觉与管理逻辑
  * ======================================================= */
 
-function renderAdminPage(url, env, subs, tokens, settings, status) {
+function renderAdminPage(url, subs, tokens, settings, status) {
     const origin = url.origin;
 
     const fakeStatusHtml =
@@ -2295,6 +2161,14 @@ ${getToolStyles()}
 <textarea id="sub-edit-sources" style="min-height:220px" placeholder="一行一个订阅地址或节点"></textarea>
 <div class="section-note">可以同时放订阅 URL 和自建节点。SUBS 本身不会生成公开订阅链接。</div>
 </div>
+<div class="field">
+<label>推荐自动更新</label>
+<label class="check-item"><input id="sub-update-enable" type="checkbox" checked> 开启</label>
+</div>
+<div class="field">
+<label>推荐更新时间（分钟）</label>
+<input id="sub-update" type="number" min="0" step="1" value="60" placeholder="例如：60">
+</div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubsModal()">取消</button>
 <button type="button" class="save-button" onclick="saveSubs()">保存</button>
@@ -2326,6 +2200,15 @@ ${getToolStyles()}
 <label>可使用的聚合节点</label>
 <div id="url-sub-list" class="check-list"></div>
 <div class="small-note">一个订阅链接可以选择多个 SUB；一个 SUB 也可以被多个订阅链接使用。</div>
+</div>
+<div class="field">
+<label>推荐自动更新</label>
+<label class="check-item"><input id="url-update-enable" type="checkbox" checked> 开启</label>
+</div>
+<div class="field">
+<label>推荐更新时间（分钟）</label>
+<input id="url-update" type="number" min="0" step="1" value="60" placeholder="例如：60">
+<div class="section-note">关闭开关不会修改已保存的分钟数。</div>
 </div>
 
 <div class="actions" style="justify-content:flex-end;">
@@ -2786,6 +2669,8 @@ function openSubCreate(){
  document.getElementById('subsModalTitle').textContent='创建聚合节点';
  document.getElementById('sub-edit-name').value='';
  document.getElementById('sub-edit-sources').value='';
+ document.getElementById('sub-update-enable').checked=true;
+ document.getElementById('sub-update').value='60';
  document.getElementById('subSaveStatus').textContent='';
  document.getElementById('subsModal').style.display='flex';
 }
@@ -2799,6 +2684,8 @@ function editSub(id){
  document.getElementById('subsModalTitle').textContent='编辑聚合节点';
  document.getElementById('sub-edit-name').value=item.name||'';
  document.getElementById('sub-edit-sources').value=(item.sources||[]).join('\\n');
+ document.getElementById('sub-update-enable').checked=item.updateEnable !== false;
+ document.getElementById('sub-update').value=Number.isFinite(Number(item.update)) ? item.update : 60;
  document.getElementById('subSaveStatus').textContent='';
  document.getElementById('subsModal').style.display='flex';
 }
@@ -2807,12 +2694,19 @@ async function saveSubs(){
  const button=document.querySelector('#subsModal button:not(.secondary)');
  const status=document.getElementById('subSaveStatus');
  const oldId=editingSub;
+ const update=Number(document.getElementById('sub-update').value);
+ if(!Number.isFinite(update) || update < 0 || !Number.isInteger(update)){
+   showToast('推荐更新时间必须是非负整数分钟');
+   return;
+ }
  const payload={
    type:oldId?'sub_update':'sub_create',
    id:oldId,
    name:document.getElementById('sub-edit-name').value.trim(),
    sources:document.getElementById('sub-edit-sources').value,
-   enabled:true
+   enabled:true,
+   update,
+   updateEnable:document.getElementById('sub-update-enable').checked
  };
 
  button.disabled=true;
@@ -3000,6 +2894,8 @@ function openUrlCreate(){
  document.getElementById('url-edit-name').value='';
  document.getElementById('url-edit-value').value='';
  document.getElementById('url-edit-value').disabled=false;
+ document.getElementById('url-update-enable').checked=true;
+ document.getElementById('url-update').value='60';
  document.getElementById('urlModeNote').textContent='留空自动生成 UUID；可直接输入自定义路径，或点击按钮反复生成。';
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs([]);
@@ -3016,6 +2912,8 @@ function editUrl(token){
  document.getElementById('url-edit-name').value=item.name||'';
  document.getElementById('url-edit-value').value=item.url||'';
  document.getElementById('url-edit-value').disabled=false;
+ document.getElementById('url-update-enable').checked=item.updateEnable !== false;
+ document.getElementById('url-update').value=Number.isFinite(Number(item.update)) ? item.update : 60;
  document.getElementById('urlModeNote').textContent='保留原路径即可不变；也可输入自定义路径、留空生成 UUID，或点击按钮反复生成。';
  document.getElementById('urlSaveStatus').textContent='';
  renderUrlSubs(item.subs||[]);
@@ -3051,18 +2949,27 @@ async function saveUrl(){
  }
 
  const oldUrl=editingUrlValue;
+ const update=Number(document.getElementById('url-update').value);
+ if(!Number.isFinite(update) || update < 0 || !Number.isInteger(update)){
+   showToast('推荐更新时间必须是非负整数分钟');
+   return;
+ }
  const payload=oldUrl?{
    type:'url_update',
    oldUrl,
    newUrl:document.getElementById('url-edit-value').value.trim(),
    name:document.getElementById('url-edit-name').value.trim(),
-   subs:selected
+   subs:selected,
+   update,
+   updateEnable:document.getElementById('url-update-enable').checked
  }:{
    type:'url_create',
    name:document.getElementById('url-edit-name').value.trim(),
    mode:document.getElementById('url-edit-value').value.trim() ? 'custom' : 'random',
    url:document.getElementById('url-edit-value').value.trim(),
-   subs:selected
+   subs:selected,
+   update,
+   updateEnable:document.getElementById('url-update-enable').checked
  };
 
  button.disabled=true;
