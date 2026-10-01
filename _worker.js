@@ -5,7 +5,7 @@
  * 核心原则：
  * 1. 只使用一个 Cloudflare KV Binding：KV
  * 2. 保留 CF-SUB 的核心订阅获取、聚合、去重、NOADS、SUBAPI、格式识别、
- *    WARP、主页伪装、管理员登录、二维码、API/CONFIG 状态检测等能力。
+ *    主页伪装、管理员登录、二维码、API/CONFIG 状态检测等能力。
  * 3. SUB 是“聚合节点配置”，不是公开订阅链接。
  * 4. URL 才是公开订阅入口。
  *
@@ -14,21 +14,14 @@
  *   SUB:<id>
  *   URL:<url>
  *
- * Pages / Workers 环境变量仍兼容原 CF-SUB：
- *   USER
- *   PASS
- *   URL
- *   URL302
- *   CODE
- *   SUBUPTIME
- *   WARP
+ * 运行时仅需绑定 KV；应用配置保存在 CONFIG.json。
  */
 
 const INTERNAL_TOKEN_SEED = 'CF-SUBS-INTERNAL';
 const ADMIN_SESSION_CONTEXT = 'CF-SUBS-ADMIN-SESSION';
 const ADMIN_SESSION_MAX_AGE_SECONDS = 604800;
 let FileName = 'CF-SUBS';
-let SUBUpdateTime = 6;
+const SUB_UPDATE_INTERVAL = 6;
 let total = 99;
 let timestamp = 4102329600000;
 
@@ -37,13 +30,6 @@ const defaultSubConverter = "SUBAPI.cmliussss.net";
 const defaultSubConfig = "https://raw.githubusercontent.com/hooleeas/ACL4SSR/refs/heads/master/Clash/config/China_Direct_Overseas_Proxy.ini";
 const defaultSubProtocol = "https";
 // ================================================
-
-// ================= 主页配置 =================
-let fakeMode = '';
-let fakeUrl = '';
-let fakeUrl302 = '';
-let fakeCode = '';
-// ==============================================
 
 const SUB_PREFIX = 'SUB:';
 const URL_PREFIX = 'URL:';
@@ -77,18 +63,18 @@ async function handleRequest(request, env) {
 
         // 每次请求重新从环境变量读取，保持 CF-SUB 原有变量行为
         // 不再使用 TOKEN 环境变量。
-        let adminUser = env.USER || '';
-        let adminPass = env.PASS || '';
+        let adminUser = '';
+        let adminPass = '';
         let adminPath = DEFAULT_ADMIN_PATH;
         let siteLogo = '';
         let subConverter = '';
         let subConfig = '';
         let subProtocol = defaultSubProtocol;
         let config_noAds = '';
-
-        fakeUrl = env.URL || '';
-        fakeUrl302 = env.URL302 || '';
-        fakeCode = env.CODE || '';
+        let fakeMode = '';
+        let fakeUrl = '';
+        let fakeUrl302 = '';
+        let fakeCode = '';
 
         // 读取 KV 配置
         if (env.KV) {
@@ -104,14 +90,14 @@ async function handleRequest(request, env) {
                     config_noAds = kvConfig.noAds || '';
 
                     // 原 CF-SUB 配置仍然兼容
-                    adminUser = kvConfig.user || adminUser;
-                    adminPass = kvConfig.pass || adminPass;
+                    adminUser = kvConfig.user || '';
+                    adminPass = kvConfig.pass || '';
                     adminPath = normalizeAdminPath(kvConfig.adminPath) || DEFAULT_ADMIN_PATH;
 
-                    fakeMode = kvConfig.fakeMode !== undefined ? kvConfig.fakeMode : '';
-                    fakeUrl = kvConfig.fakeUrl !== undefined ? kvConfig.fakeUrl : fakeUrl;
-                    fakeUrl302 = kvConfig.fakeUrl302 !== undefined ? kvConfig.fakeUrl302 : fakeUrl302;
-                    fakeCode = kvConfig.fakeCode !== undefined ? kvConfig.fakeCode : fakeCode;
+                    fakeMode = kvConfig.fakeMode || '';
+                    fakeUrl = kvConfig.fakeUrl || '';
+                    fakeUrl302 = kvConfig.fakeUrl302 || '';
+                    fakeCode = kvConfig.fakeCode || '';
                 }
             } catch (e) {
                 console.error('解析 KV 配置失败', e);
@@ -146,8 +132,6 @@ async function handleRequest(request, env) {
         let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
         total = total * 1099511627776;
         let expire = Math.floor(timestamp / 1000);
-        SUBUpdateTime = env.SUBUPTIME || SUBUpdateTime;
-
         const isProxyClientUA = [
             'clash', 'meta', 'mihomo', 'sing-box', 'singbox', 'surge',
             'quantumult', 'loon', 'nekobox', 'v2rayn', 'v2rayng',
@@ -1358,12 +1342,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
     }
 
     const sourceToken = new URL(request.url).searchParams.get('sourceToken') || token || '';
-    let conversionOrigin = new URL(request.url).origin;
-    if (env.SUBSOURCE_URL) {
-        try {
-            conversionOrigin = new URL(env.SUBSOURCE_URL).origin;
-        } catch (error) {}
-    }
+    const conversionOrigin = new URL(request.url).origin;
     const conversionSeed = `${conversionOrigin}/${await MD5MD5(runtime.fakeToken)}?token=${encodeURIComponent(runtime.fakeToken)}${sourceToken ? `&sourceToken=${encodeURIComponent(sourceToken)}` : ''}`;
     let 订阅转换URL = conversionSeed;
     let 追加UA = 'v2rayn';
@@ -1438,12 +1417,6 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
         }
     }
 
-    // 原 CF-SUB WARP 支持
-    if (env.WARP) {
-        const warpList = await ADD(env.WARP);
-        订阅转换URL += '|' + warpList.join('|');
-    }
-
     const text = new TextDecoder().decode(
         new TextEncoder().encode(req_data)
     );
@@ -1478,7 +1451,7 @@ async function generateSubscription(request, env, sourceList, runtime, token) {
 
     const responseHeaders = {
         'content-type': 'text/plain; charset=utf-8',
-        'Profile-Update-Interval': `${SUBUpdateTime}`,
+        'Profile-Update-Interval': `${SUB_UPDATE_INTERVAL}`,
         'Profile-web-page-url': request.url.includes('?')
             ? request.url.split('?')[0]
             : request.url
