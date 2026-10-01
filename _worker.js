@@ -2041,9 +2041,9 @@ ${getSubUIStyles()}
 <div id="copyNotice" class="toast"></div>
 <main class="page app-shell guest-shell">
 <header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">复制订阅链接可同时生成二维码</div></header>
-<section class="panel"><h2 class="section-title">订阅地址</h2><div class="guest-link-list">
+<div class="guest-link-list">
 ${links.map(([label,value])=>`<div class="guest-link-item"><div class="guest-link-head"><div class="guest-link-label">${escapeHTML(label)}</div></div><a class="guest-link-url" href="${escapeHTML(value)}" target="_blank" rel="noopener">${escapeHTML(value)}</a><div class="guest-actions"><button type="button" class="button guest-copy-btn" data-url="${escapeHTML(value)}" onclick="copyGuest(this)">复制</button><button type="button" class="button secondary guest-hide-btn" onclick="hideGuestQr(this)" style="display:none">隐藏二维码</button></div><div class="guest-qrcode"></div></div>`).join('')}
-</div></section>
+</div>
 </main>
 <script>
 let guestToastTimer;
