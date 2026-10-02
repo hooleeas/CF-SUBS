@@ -1591,6 +1591,19 @@ Commercial support is available at <a href="http://nginx.com/">nginx.com</a>.</p
 </html>`;
 }
 
+function encodeBase64(value) {
+    const bytes = new TextEncoder().encode(String(value || ''));
+    let binary = '';
+
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(
+            ...bytes.subarray(i, i + 0x8000)
+        );
+    }
+
+    return btoa(binary);
+}
+
 function base64Decode(str) {
     const bytes = new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0)));
     const decoder = new TextDecoder('utf-8');
