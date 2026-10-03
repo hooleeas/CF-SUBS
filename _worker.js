@@ -2438,7 +2438,6 @@ ${getToolStyles()}
 <button type="button" class="secondary" onclick="closeSubApiModal()">取消</button>
 <button type="button" class="save-button" onclick="saveConfig(this,'subapi')">保存</button>
 </div>
-<span id="subApiSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
@@ -2455,7 +2454,6 @@ ${getToolStyles()}
 <button type="button" class="secondary" onclick="closeSubConfigModal()">取消</button>
 <button type="button" class="save-button" onclick="saveConfig(this,'subconfig')">保存</button>
 </div>
-<span id="subConfigSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
@@ -2472,7 +2470,6 @@ ${getToolStyles()}
 <button type="button" class="secondary" onclick="closeNoAdsModal()">取消</button>
 <button type="button" class="save-button" onclick="saveConfig(this,'noads')">保存</button>
 </div>
-<span id="noAdsSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
@@ -2556,7 +2553,6 @@ ${getToolStyles()}
 <button type="button" class="save-button" onclick="saveConfig(this,'subname')">保存</button>
 </div>
 <div class="field" style="margin-top:12px;"><input id="config-subname" type="text" value="${escapeHTML(settings.subName)}" placeholder="例如：CF-SUBS"></div>
-<span id="configSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </section>
 
 <section class="panel">
@@ -2978,8 +2974,9 @@ function updateFakeModeStatus(){
 async function saveConfig(button,type){
  const isSec=type==='sec';
  const isFake=type==='fake';
- const statusId=isSec?'secSaveStatus':(isFake?'fakeSaveStatus':(type==='subapi'?'subApiSaveStatus':(type==='subconfig'?'subConfigSaveStatus':(type==='noads'?'noAdsSaveStatus':'configSaveStatus'))));
+ const statusId=isSec?'secSaveStatus':(isFake?'fakeSaveStatus':'');
  const statusElem=document.getElementById(statusId);
+ const usesToast=type==='subname'||type==='subapi'||type==='subconfig'||type==='noads';
 
  const secPass=document.getElementById('sec-pass')?.value||'';
  const secPass2=document.getElementById('sec-pass2')?.value||'';
@@ -3018,8 +3015,18 @@ async function saveConfig(button,type){
    });
    if(!response.ok)throw new Error(await response.text());
    const data=await response.json().catch(()=>({}));
-   statusElem.textContent='已保存 '+new Date().toLocaleString();
-   statusElem.style.color='#2e7d32';
+   if(usesToast){
+     const messages={
+       subname:'订阅名称已保存',
+       subapi:'SUBAPI 已保存',
+       subconfig:'SUBCONFIG 已保存',
+       noads:'NOADS 已保存'
+     };
+     showToast(messages[type]);
+   }else if(statusElem){
+     statusElem.textContent='已保存 '+new Date().toLocaleString();
+     statusElem.style.color='#2e7d32';
+   }
    if(type==='subapi')closeSubApiModal();
    if(type==='subconfig')closeSubConfigModal();
    if(type==='noads')closeNoAdsModal();
@@ -3038,8 +3045,12 @@ async function saveConfig(button,type){
      setTimeout(()=>window.location.replace(window.location.pathname),300);
    }
  }catch(err){
-   statusElem.textContent='保存失败: '+err.message;
-   statusElem.style.color='#c62828';
+   if(usesToast){
+     showToast('保存失败: '+err.message);
+   }else if(statusElem){
+     statusElem.textContent='保存失败: '+err.message;
+     statusElem.style.color='#c62828';
+   }
  }finally{
    AdminUI.setButtonBusy(button,false);
  }
