@@ -2344,9 +2344,9 @@ ${getToolStyles()}
 .token-url { margin-top: 10px; color: #1f4b99; word-break: break-all; }
 .chip { display: inline-block; margin: 2px 3px 2px 0; padding: 3px 8px; border-radius: 8px; background: rgba(31,75,153,.08); color: #1f4b99; font-size: 12px; }
 .check-list { display: grid; max-height: 230px; gap: 8px; overflow: auto; padding: 10px; border: 1px solid rgba(207,207,200,.6); border-radius: 10px; }
-.check-item { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 400; cursor: grab; touch-action: none; user-select: none; }
+.check-item { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 400; cursor: grab; touch-action: pan-y; user-select: none; }
 .check-item input { width: 18px; height: 18px; }
-.sortable-item { position: relative; cursor: grab; touch-action: none; user-select: none; }
+.sortable-item { position: relative; cursor: grab; touch-action: pan-y; user-select: none; }
 .sortable-item .drag-handle { display: inline-flex; width: 22px; min-width: 22px; flex-shrink: 0; align-items: center; justify-content: center; color: #999; font-size: 18px; line-height: 1; cursor: grab; }
 .sortable-item.dragging { transform: scale(.99); opacity: .55; box-shadow: 0 8px 22px rgba(0,0,0,.16); }
 #url-sub-list .check-item { padding: 8px 10px; border: 1px solid rgba(207,207,200,.45); border-radius: 10px; background: rgba(250,250,250,.55); }
@@ -3214,6 +3214,7 @@ function enableLongPressSort(container, itemSelector, onChange){
  let dragging=null;
  let timer=null;
  let touchStartY=0;
+ let touchStartX=0;
  let changed=false;
 
  function clearTimer(){
@@ -3272,18 +3273,20 @@ function enableLongPressSort(container, itemSelector, onChange){
      const touch=e.touches[0];
      if(!touch)return;
      touchStartY=touch.clientY;
+     touchStartX=touch.clientX;
      clearTimer();
      timer=setTimeout(function(){
+       timer=null;
        dragging=item;
        item.classList.add('dragging');
-     },420);
+     },500);
    },{passive:true});
 
    item.addEventListener('touchmove',function(e){
      const touch=e.touches[0];
      if(!touch)return;
      if(!dragging){
-       if(Math.abs(touch.clientY-touchStartY)>10)clearTimer();
+       if(Math.hypot(touch.clientX-touchStartX,touch.clientY-touchStartY)>10)clearTimer();
        return;
      }
      e.preventDefault();
