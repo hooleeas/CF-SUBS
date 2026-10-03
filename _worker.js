@@ -1,13 +1,13 @@
 /**
- * CF-SUB
- * 基于 CF-SUB 核心能力扩展的多 SUB / 多订阅链接 URL 管理版
+ * CF-SUBS
+ * 多 SUB / 多订阅链接管理与订阅转换 Worker
  *
- * 核心原则：
- * 1. 只使用一个 Cloudflare KV Binding：KV
- * 2. 保留 CF-SUB 的订阅获取、聚合、去重、NOADS、SUBAPI、格式识别、
- *    主页伪装、管理员登录、二维码、API/CONFIG 状态检测等能力。
- * 3. SUB 是“聚合节点配置”，不是公开订阅链接。
- * 4. URL 才是公开订阅入口。
+ * 项目功能：
+ * 1. 使用一个 Cloudflare KV Binding：KV
+ * 2. 管理多个 SUB 聚合配置和公开订阅 URL。
+ * 3. 支持订阅获取、聚合去重、NOADS 过滤及多格式订阅转换。
+ * 4. 提供站点设置、管理员登录、二维码和服务状态检测。
+ * 5. SUB 是聚合节点配置，URL 是公开订阅入口。
  *
  * KV：
  *   CONFIG.json
@@ -2288,9 +2288,7 @@ function hideGuestQr(button){const item=button.closest('.guest-link-item');if(!i
 
 
 /* =========================================================
- * CF-SUB 管理后台/* =========================================================
- * CF-SUB 管理后台
- * 保持 CF-SUB 核心视觉与管理逻辑
+ * CF-SUBS 管理后台
  * ======================================================= */
 
 function renderAdminPage(url, subs, tokens, settings, status) {
