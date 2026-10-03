@@ -806,7 +806,7 @@ body{min-height:100vh}
 .json-entry-meta{display:flex;flex:0 0 auto;align-items:center;gap:10px}
 .json-empty{padding:28px 12px;color:#777;text-align:center}
 .json-actions{display:flex;gap:8px;flex-wrap:wrap}
-.json-toast{position:fixed;top:18px;right:18px;z-index:10000;display:none;max-width:calc(100vw - 36px);padding:10px 14px;border-radius:10px;background:#1f2937;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.json-toast{position:fixed;left:50%;bottom:15%;transform:translateX(-50%);z-index:10000;display:none;max-width:calc(100vw - 40px);padding:12px 18px;border-radius:12px;background:rgba(0,0,0,.82);color:#fff;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.18)}
 .json-view-overlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.58);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);overscroll-behavior:contain}
 .json-view-overlay.open{display:flex}
 .json-view-modal{display:flex;width:min(900px,100%);max-height:min(82vh,900px);flex-direction:column;padding:20px;border:1px solid rgba(120,130,140,.24);border-radius:16px;background:#fff;color:#1f2937;box-shadow:0 18px 55px rgba(0,0,0,.32);overscroll-behavior:contain}
@@ -841,7 +841,7 @@ body{min-height:100vh}
 var exportData=${safeExportData};
 var displayEntries=${safeDisplayEntries};
 var toast=document.getElementById('jsonToast'),toastTimer;
-function showMessage(message,isError){toast.textContent=message;toast.style.background=isError?'#d93025':'#1f2937';toast.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(function(){toast.style.display='none'},2200)}
+function showMessage(message,isError){toast.textContent=message;toast.style.background=isError?'#b42318':'rgba(0,0,0,.82)';toast.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(function(){toast.style.display='none'},1800)}
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,function(character){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]})}
 function renderJsonEntries(){
  var list=document.getElementById('json-list');
@@ -972,26 +972,59 @@ async function handleAdmin(request, env, runtime) {
 
             if (data.type === 'config') {
                 const old = await getConfig(env);
+                const settings = data.settings;
+                const allowedSettings = new Set([
+                    'subName', 'subApi', 'subConfig', 'siteLogo', 'noAds',
+                    'user', 'pass', 'adminPath', 'fakeMode', 'fakeUrl',
+                    'fakeUrl302', 'fakeCode'
+                ]);
+                if (
+                    !settings ||
+                    typeof settings !== 'object' ||
+                    Array.isArray(settings) ||
+                    !Object.keys(settings).length ||
+                    Object.keys(settings).some(key => !allowedSettings.has(key))
+                ) {
+                    return jsonResponse({ ok: false, error: '配置数据无效' }, 400);
+                }
 
-                const next = {
-                    subName: normalizeName(data.settings?.subName) || 'CF-SUBS',
-                    subApi: String(data.settings?.subApi || '').trim(),
-                    subConfig: String(data.settings?.subConfig || '').trim(),
-                    siteLogo: String(data.settings?.siteLogo ?? old.siteLogo ?? '').trim(),
-                    noAds: String(data.settings?.noAds || '').trim(),
-
-                    // 保留旧配置
-                    user: String(data.settings?.user || old.user || ''),
-                    pass: data.settings?.pass
-                        ? String(data.settings.pass)
-                        : String(old.pass || ''),
-                    adminPath: normalizeAdminPath(data.settings?.adminPath || old.adminPath) || DEFAULT_ADMIN_PATH,
-
-                    fakeMode: String(data.settings?.fakeMode ?? old.fakeMode ?? ''),
-                    fakeUrl: String(data.settings?.fakeUrl ?? old.fakeUrl ?? ''),
-                    fakeUrl302: String(data.settings?.fakeUrl302 ?? old.fakeUrl302 ?? ''),
-                    fakeCode: String(data.settings?.fakeCode ?? old.fakeCode ?? '')
-                };
+                const next = { ...old };
+                if (Object.prototype.hasOwnProperty.call(settings, 'subName')) {
+                    next.subName = normalizeName(settings.subName) || 'CF-SUBS';
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'subApi')) {
+                    next.subApi = String(settings.subApi || '').trim();
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'subConfig')) {
+                    next.subConfig = String(settings.subConfig || '').trim();
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'siteLogo')) {
+                    next.siteLogo = String(settings.siteLogo ?? '').trim();
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'noAds')) {
+                    next.noAds = String(settings.noAds || '').trim();
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'user')) {
+                    next.user = String(settings.user || old.user || '');
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'pass')) {
+                    next.pass = settings.pass ? String(settings.pass) : String(old.pass || '');
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'adminPath')) {
+                    next.adminPath = normalizeAdminPath(settings.adminPath || old.adminPath) || DEFAULT_ADMIN_PATH;
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'fakeMode')) {
+                    next.fakeMode = String(settings.fakeMode ?? '');
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'fakeUrl')) {
+                    next.fakeUrl = String(settings.fakeUrl ?? '');
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'fakeUrl302')) {
+                    next.fakeUrl302 = String(settings.fakeUrl302 ?? '');
+                }
+                if (Object.prototype.hasOwnProperty.call(settings, 'fakeCode')) {
+                    next.fakeCode = String(settings.fakeCode ?? '');
+                }
 
                 await env.KV.put('CONFIG.json', serializeKVJson(next));
                 return jsonResponse({
@@ -2056,6 +2089,7 @@ function getToolStyles() {
         input, select { height: 42px; white-space: normal; }
         textarea { min-height: 200px; line-height: 1.5; resize: vertical; }
         .error { color: #b00020; margin-top: 10px; }
+        .error:empty { display: none; }
         .muted { color: #666; font-size: 13px; margin-left: 8px; transition: color 0.3s; }
         .toast { position: fixed; left: 50%; bottom: 15%; transform: translateX(-50%); display: none; min-width: 190px; max-width: calc(100vw - 40px); padding: 12px 18px; text-align: center; color: #fff; background: rgba(0, 0, 0, 0.82); border-radius: 12px; z-index: 9999; }
         .status-indicator { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 8px; font-weight: 600; width: 100%; word-break: break-all; transition: background 0.3s, color 0.3s, border-color 0.3s; }
@@ -2229,13 +2263,14 @@ ${getSubUIStyles()}
 .guest-link-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:30px;margin-bottom:14px}.guest-link-label{font-weight:700;word-break:break-word;padding-right:90px}
 .guest-link-url{display:block;width:100%;box-sizing:border-box;padding:10px 12px;margin-top:14px;border:1px solid rgba(229,229,223,.8);border-radius:9px;background:rgba(250,250,250,.7);color:#1f4b99;text-decoration:none;word-break:break-all;overflow-wrap:anywhere;transition:all .3s ease}.guest-link-url:hover{background:rgba(31,75,153,.05);border-color:#1f4b99}
 .guest-actions{position:absolute;top:12px;right:12px;display:flex;gap:8px;align-items:center;justify-content:flex-end}.guest-actions button{margin:0}.guest-copy-btn,.guest-hide-btn{min-width:56px;width:auto;height:30px;min-height:30px;padding:0 10px;flex:0 0 auto}.guest-hide-btn{display:none}.guest-qrcode{display:none;background:#fff;border-radius:12px;padding:12px;margin:14px auto 0;width:max-content;max-width:100%;box-shadow:0 8px 24px rgba(0,0,0,.08)}
-@media(max-width:640px){.guest-shell{width:calc(100% - 28px);margin:14px 14px 28px;padding:0 18px 24px;border-radius:22px}.guest-header{margin:0 -18px 16px;padding:22px 18px 20px}.guest-header .title{font-size:34px}}
+@media(max-width:900px){.page.app-shell.guest-shell{width:calc(100% - 16px);max-width:1100px;margin:14px auto 28px;padding:0 12px 28px;border-radius:22px}.guest-header{margin:0 -12px 16px;padding:22px 12px 20px}}
+@media(max-width:640px){.page.app-shell.guest-shell{margin-top:10px;padding-bottom:24px;border-radius:20px}.guest-header{margin-bottom:14px;padding-top:20px;padding-bottom:18px}.guest-header .title{font-size:34px}}
 @media(prefers-color-scheme:dark){.guest-link-item{background:rgba(8,12,14,.78);border-color:rgba(255,255,255,.10)}.guest-link-url{background:rgba(2,6,8,.82);border-color:rgba(255,255,255,.12);color:#64b5f6}.guest-link-url:hover{background:rgba(100,181,246,.1);border-color:#64b5f6}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@keeex/qrcodejs-kx@1.0.2/qrcode.min.js"></script>
 </head>
 <body>
-<div id="copyNotice" class="toast"></div>
+<div id="copyNotice" class="toast" role="status" aria-live="polite"></div>
 <main class="page app-shell guest-shell">
 <header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">复制订阅链接可同时生成二维码</div></header>
 <div class="guest-link-list">
@@ -2244,8 +2279,8 @@ ${links.map(([label,value])=>`<div class="guest-link-item"><div class="guest-lin
 </main>
 <script>
 let guestToastTimer;
-function guestToast(message){const el=document.getElementById('copyNotice');el.textContent=message;el.style.display='block';clearTimeout(guestToastTimer);guestToastTimer=setTimeout(()=>el.style.display='none',1500)}
-function copyGuest(button){const value=button.dataset.url||'';const done=()=>{guestToast('已复制到剪贴板');showGuestQr(button)};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(value).then(done).catch(()=>guestToast('复制失败，请手动复制'));else{const ta=document.createElement('textarea');ta.value=value;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done()}catch(e){guestToast('复制失败，请手动复制')}ta.remove()}}
+function guestToast(message,isError){const el=document.getElementById('copyNotice');el.textContent=message;el.style.background=isError?'#b42318':'rgba(0,0,0,.82)';el.style.display='block';clearTimeout(guestToastTimer);guestToastTimer=setTimeout(()=>el.style.display='none',1800)}
+function copyGuest(button){const value=button.dataset.url||'';const done=()=>{guestToast('已复制到剪贴板');showGuestQr(button)};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(value).then(done).catch(()=>guestToast('复制失败，请手动复制',true));else{const ta=document.createElement('textarea');ta.value=value;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done()}catch(e){guestToast('复制失败，请手动复制',true)}ta.remove()}}
 function showGuestQr(button){const item=button.closest('.guest-link-item');const qr=item&&item.querySelector('.guest-qrcode');const copy=item&&item.querySelector('.guest-copy-btn');const hide=item&&item.querySelector('.guest-hide-btn');if(!item||!qr)return;document.querySelectorAll('.guest-link-item').forEach(function(x){if(x===item)return;const q=x.querySelector('.guest-qrcode'),c=x.querySelector('.guest-copy-btn'),h=x.querySelector('.guest-hide-btn');if(q){q.style.display='none';q.innerHTML=''}if(c)c.style.display='inline-flex';if(h)h.style.display='none'});qr.innerHTML='';qr.style.display='block';if(copy)copy.style.display='none';if(hide)hide.style.display='inline-flex';if(window.QRCode)new QRCode(qr,{text:value=button.dataset.url,width:220,height:220,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.Q})}
 function hideGuestQr(button){const item=button.closest('.guest-link-item');if(!item)return;const q=item.querySelector('.guest-qrcode'),c=item.querySelector('.guest-copy-btn'),h=item.querySelector('.guest-hide-btn');if(q){q.style.display='none';q.innerHTML=''}if(c)c.style.display='inline-flex';if(h)h.style.display='none'}
 </script></body></html>`;
@@ -2299,6 +2334,9 @@ ${getToolStyles()}
 .sub-row:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(50,90,70,.08); }
 .sub-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sub-head-main { display: flex; min-width: 0; flex: 1; align-items: center; gap: 10px; }
+.url-head { justify-content: flex-start; flex-wrap: nowrap; }
+.url-info { min-width: 0; flex: 1; }
+.url-info .sub-count { margin-left: 0; }
 .sub-head .actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; }
 .sub-name { color: inherit; font-size: 15px; font-weight: 700; word-break: break-word; }
 .sub-count { margin-left: auto; color: #888; font-size: 12px; word-break: break-word; }
@@ -2334,6 +2372,8 @@ ${getToolStyles()}
     .admin-shell > .panel { padding: 12px; }
     .sub-head { align-items: flex-start; }
     .sub-head-main { width: 100%; justify-content: space-between; gap: 8px; }
+    .url-head { flex-wrap: wrap; }
+    .url-info { flex-basis: calc(100% - 40px); }
     .sub-head .actions { width: 100%; justify-content: flex-end; }
     .sub-head .actions button { min-width: 94px; flex: 1 1 auto; }
     .sub-row { padding: 10px; }
@@ -2359,7 +2399,7 @@ ${getToolStyles()}
 </head>
 <body>
 
-<div id="copyNotice" class="toast"></div>
+<div id="copyNotice" class="toast" role="status" aria-live="polite"></div>
 
 <!-- SUB Modal -->
 <div id="subsModal" class="modal-overlay">
@@ -2368,17 +2408,18 @@ ${getToolStyles()}
 <div class="field">
 <label>聚合节点名称</label>
 <input id="sub-edit-name" type="text" placeholder="例如：Japan">
+<div id="subNameError" class="error"></div>
 </div>
 <div class="field">
 <label>订阅地址 / 自建节点</label>
 <textarea id="sub-edit-sources" style="min-height:220px" placeholder="一行一个订阅地址或节点"></textarea>
 <div class="section-note">可以同时放订阅 URL 和自建节点。SUBS 本身不会生成公开订阅链接。</div>
+<div id="subSourcesError" class="error"></div>
 </div>
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSubsModal()">取消</button>
 <button type="button" class="save-button" onclick="saveSubs()">保存</button>
 </div>
-<span id="subSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
@@ -2390,6 +2431,7 @@ ${getToolStyles()}
 <div class="field">
 <label>链接名称</label>
 <input id="url-edit-name" type="text" placeholder="例如：我的主订阅">
+<div id="urlNameError" class="error"></div>
 </div>
 
 <div class="field">
@@ -2399,12 +2441,14 @@ ${getToolStyles()}
 <div class="small-note" id="urlModeNote">留空自动生成 UUID；可直接输入自定义路径，或点击按钮反复生成。</div>
 <button type="button" class="secondary url-uuid-button" onclick="generateUrlUUID()">随机UUID</button>
 </div>
+<div id="urlPathError" class="error"></div>
 </div>
 
 <div class="field">
 <label>可使用的聚合节点</label>
 <div id="url-sub-list" class="check-list"></div>
 <div class="small-note">一个订阅链接可以选择多个 SUB；一个 SUB 也可以被多个订阅链接使用。</div>
+<div id="urlSubsError" class="error"></div>
 </div>
 <div class="field">
 <label>推荐自动更新</label>
@@ -2414,13 +2458,13 @@ ${getToolStyles()}
 <label>推荐更新时间（分钟）</label>
 <input id="url-update" type="number" min="0" step="1" value="60" placeholder="例如：60">
 <div class="section-note">关闭开关不会修改已保存的分钟数。</div>
+<div id="urlUpdateError" class="error"></div>
 </div>
 
 <div class="actions" style="justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeUrlModal()">取消</button>
 <button type="button" class="save-button" onclick="saveUrl()">保存</button>
 </div>
-<span id="urlSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
@@ -2479,12 +2523,11 @@ ${getToolStyles()}
 <h2 class="section-title" style="font-size:20px;margin-bottom:20px;">安全设置</h2>
 <div class="field"><label>后台登录账号 (USER)</label><input id="sec-user" type="text" value="${escapeHTML(settings.user || '')}" placeholder="例如：admin"></div>
 <div class="field"><label>后台登录密码 (PASS)</label><input id="sec-pass" type="password" value="" placeholder="留空则不修改当前密码"></div>
-<div class="field"><label>确认登录密码</label><input id="sec-pass2" type="password" value="" placeholder="留空则不修改当前密码"></div>
+<div class="field"><label>确认登录密码</label><input id="sec-pass2" type="password" value="" placeholder="留空则不修改当前密码"><div id="secSaveStatus" class="error"></div></div>
 <div class="actions" style="margin-top:24px;justify-content:flex-end;">
 <button type="button" class="secondary" onclick="closeSecurityModal()">取消</button>
 <button type="button" class="save-button" onclick="saveConfig(this,'sec')">保存修改</button>
 </div>
-<span id="secSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
@@ -2528,7 +2571,6 @@ ${getToolStyles()}
 <button type="button" class="secondary" onclick="closeFakeModal()">取消</button>
 <button type="button" class="save-button" onclick="saveConfig(this,'fake')">保存修改</button>
 </div>
-<span id="fakeSaveStatus" class="muted" style="display:block;text-align:right;margin-top:8px;"></span>
 </div>
 </div>
 
@@ -2601,10 +2643,10 @@ ${tokens.length ? tokens.map(t => {
     });
 
     return `
-<div class="sub-row sortable-item" data-sort-id="${escapeHTML(t.url)}">
-<div class="sub-head">
+<div class="sub-row sortable-item url-row" data-sort-id="${escapeHTML(t.url)}">
+<div class="sub-head url-head">
 <span class="drag-handle" aria-hidden="true">⋮⋮</span>
-<div style="min-width:0;">
+<div class="url-info">
 <div class="sub-name">${escapeHTML(t.name)}</div>
 <div class="sub-count">URL：${escapeHTML(t.url)}</div>
 </div>
@@ -2751,13 +2793,14 @@ const AdminUI = (function(){
    }
  }
 
- function toast(message){
+ function toast(message,isError){
    const el=document.getElementById('copyNotice');
    if(!el)return;
    el.textContent=message;
+   el.style.background=isError?'#b42318':'rgba(0, 0, 0, 0.82)';
    el.style.display='block';
    clearTimeout(window.__toast);
-   window.__toast=setTimeout(()=>el.style.display='none',1500);
+   window.__toast=setTimeout(()=>el.style.display='none',1800);
  }
 
  document.addEventListener('keydown',function(event){
@@ -2790,7 +2833,7 @@ function reorderSubListFromDOM(){
    if(!res.ok)throw new Error(text||'排序失败');
    showToast('聚合节点排序已更新');
  }).catch(function(error){
-   showToast(error.message||'排序失败');
+   showToast(error.message||'排序失败',true);
    renderSubList();
  });
 }
@@ -2815,7 +2858,7 @@ function reorderUrlListFromDOM(){
    showToast('订阅链接顺序已更新');
  }).catch(function(error){
    TOKENS.splice(0,TOKENS.length,...previousTokens);
-   showToast(error.message||'排序失败');
+   showToast(error.message||'排序失败',true);
    renderUrlList();
  });
 }
@@ -2867,14 +2910,12 @@ function renderUrlList(){
    const chips=subNames.length
      ? subNames.map(function(x){return '<span class="chip">'+escapeJS(x)+'</span>';}).join('')
      : '<span class="small-note">未绑定聚合节点</span>';
-   return '<div class="sub-row sortable-item" data-sort-id="'+path+'">'
-    +'<div class="sub-head">'
+   return '<div class="sub-row sortable-item url-row" data-sort-id="'+path+'">'
+    +'<div class="sub-head url-head">'
     +'<span class="drag-handle" aria-hidden="true">⋮⋮</span>'
-    +'<div class="sub-head-main">'
-    +'<div style="min-width:0;">'
+    +'<div class="url-info">'
     +'<div class="sub-name">'+name+'</div>'
     +'<div class="sub-count">URL：'+path+'</div>'
-    +'</div>'
     +'</div>'
     +'<div class="actions" style="margin-top:0;">'
     +'<button type="button" onclick="copyValue(\\\''+safeUrl+'\\\')">复制</button>'
@@ -2894,12 +2935,12 @@ function refreshSubscriptionUI(){
  renderUrlList();
 }
 
-function showToast(message){
- AdminUI.toast(message);
+function showToast(message,isError){
+ AdminUI.toast(message,isError);
 }
 
 function copyValue(value){
- navigator.clipboard.writeText(value).then(()=>showToast('已复制到剪贴板')).catch(()=>showToast('复制失败，请手动复制'));
+ navigator.clipboard.writeText(value).then(()=>showToast('已复制到剪贴板')).catch(()=>showToast('复制失败，请手动复制',true));
 }
 
 function openSubApiModal(){AdminUI.openModal('subApiModal')}
@@ -2909,7 +2950,7 @@ function closeSubConfigModal(){AdminUI.closeModal('subConfigModal')}
 function openNoAdsModal(){AdminUI.openModal('noAdsModal')}
 function closeNoAdsModal(){AdminUI.closeModal('noAdsModal')}
 
-function openSecurityModal(){AdminUI.openModal('securityModal')}
+function openSecurityModal(){document.getElementById('secSaveStatus').textContent='';AdminUI.openModal('securityModal')}
 function closeSecurityModal(){AdminUI.closeModal('securityModal')}
 function openFakeModal(){AdminUI.openModal('fakeModal')}
 function closeFakeModal(){AdminUI.closeModal('fakeModal')}
@@ -2974,59 +3015,71 @@ function updateFakeModeStatus(){
 async function saveConfig(button,type){
  const isSec=type==='sec';
  const isFake=type==='fake';
- const statusId=isSec?'secSaveStatus':(isFake?'fakeSaveStatus':'');
+ const statusId=isSec?'secSaveStatus':'';
  const statusElem=document.getElementById(statusId);
- const usesToast=type==='subname'||type==='subapi'||type==='subconfig'||type==='noads';
 
  const secPass=document.getElementById('sec-pass')?.value||'';
  const secPass2=document.getElementById('sec-pass2')?.value||'';
  const siteAdminPath=(document.getElementById('site-admin-path')?.value||'admin').trim().replace(/^\\/+|\\/+$/g,'')||'admin';
  const currentAdminPath=window.location.pathname.replace(/^\\/+|\\/+$/g,'');
- const adminPathChanged=(isSec||isFake) && siteAdminPath!==currentAdminPath;
+ const adminPathChanged=isFake && siteAdminPath!==currentAdminPath;
 
  if(isSec && secPass!==secPass2){
-   alert('两次输入的密码不一致！');
+   if(statusElem)statusElem.textContent='两次输入的密码不一致。';
+   showToast('两次输入的密码不一致。',true);
    return;
  }
+ if(statusElem)statusElem.textContent='';
 
  AdminUI.setButtonBusy(button,true,'保存中...');
 
  try{
-   const response=await fetch(window.location.pathname,{
-     method:'POST',
-     headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({
-     type:'config',
-     settings:{
+   let settings;
+   if(type==='subname'){
+     settings={subName:document.getElementById('config-subname')?.value||''};
+   }else if(type==='subapi'){
+     settings={subApi:document.getElementById('config-subapi')?.value||''};
+   }else if(type==='subconfig'){
+     settings={subConfig:document.getElementById('config-subconfig')?.value||''};
+   }else if(type==='noads'){
+     settings={noAds:document.getElementById('config-noads')?.value||''};
+   }else if(isSec){
+     settings={
        user:document.getElementById('sec-user')?.value||'',
-       pass:secPass,
-       subName:document.getElementById('config-subname')?.value||'',
-       subApi:document.getElementById('config-subapi')?.value||'',
-       subConfig:document.getElementById('config-subconfig')?.value||'',
-       noAds:document.getElementById('config-noads')?.value||'',
+       pass:secPass
+     };
+   }else if(isFake){
+     settings={
        fakeMode:document.getElementById('fake-mode')?.value||'',
        fakeUrl:document.getElementById('fake-url')?.value||'',
        fakeUrl302:document.getElementById('fake-url302')?.value||'',
        fakeCode:document.getElementById('fake-code')?.value||'',
-    siteLogo:document.getElementById('site-logo')?.value.trim()||'',
+       siteLogo:document.getElementById('site-logo')?.value.trim()||'',
        adminPath:siteAdminPath
-     }
+     };
+   }else{
+     throw new Error('不支持的配置类型');
+   }
+
+   const response=await fetch(window.location.pathname,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({
+       type:'config',
+       settings
      })
    });
    if(!response.ok)throw new Error(await response.text());
    const data=await response.json().catch(()=>({}));
-   if(usesToast){
-     const messages={
-       subname:'订阅名称已保存',
-       subapi:'SUBAPI 已保存',
-       subconfig:'SUBCONFIG 已保存',
-       noads:'NOADS 已保存'
-     };
-     showToast(messages[type]);
-   }else if(statusElem){
-     statusElem.textContent='已保存 '+new Date().toLocaleString();
-     statusElem.style.color='#2e7d32';
-   }
+   const messages={
+     subname:'订阅名称已保存',
+     subapi:'SUBAPI 已保存',
+     subconfig:'SUBCONFIG 已保存',
+     noads:'NOADS 已保存',
+     sec:'安全设置已保存',
+     fake:'站点设置已保存'
+   };
+   showToast(messages[type]);
    if(type==='subapi')closeSubApiModal();
    if(type==='subconfig')closeSubConfigModal();
    if(type==='noads')closeNoAdsModal();
@@ -3045,12 +3098,7 @@ async function saveConfig(button,type){
      setTimeout(()=>window.location.replace(window.location.pathname),300);
    }
  }catch(err){
-   if(usesToast){
-     showToast('保存失败: '+err.message);
-   }else if(statusElem){
-     statusElem.textContent='保存失败: '+err.message;
-     statusElem.style.color='#c62828';
-   }
+   showToast('保存失败: '+err.message,true);
  }finally{
    AdminUI.setButtonBusy(button,false);
  }
@@ -3061,7 +3109,8 @@ function openSubCreate(){
  document.getElementById('subsModalTitle').textContent='创建聚合节点';
  document.getElementById('sub-edit-name').value='';
  document.getElementById('sub-edit-sources').value='';
- document.getElementById('subSaveStatus').textContent='';
+ document.getElementById('subNameError').textContent='';
+ document.getElementById('subSourcesError').textContent='';
  AdminUI.openModal('subsModal');
 }
 
@@ -3074,24 +3123,41 @@ function editSub(id){
  document.getElementById('subsModalTitle').textContent='编辑聚合节点';
  document.getElementById('sub-edit-name').value=item.name||'';
  document.getElementById('sub-edit-sources').value=(item.sources||[]).join('\\n');
- document.getElementById('subSaveStatus').textContent='';
+ document.getElementById('subNameError').textContent='';
+ document.getElementById('subSourcesError').textContent='';
  AdminUI.openModal('subsModal');
 }
 
 async function saveSubs(){
  const button=document.querySelector('#subsModal button:not(.secondary)');
- const status=document.getElementById('subSaveStatus');
  const oldId=editingSub;
+ const name=document.getElementById('sub-edit-name').value.trim();
+ const sources=document.getElementById('sub-edit-sources').value;
+ const nameError=document.getElementById('subNameError');
+ const sourcesError=document.getElementById('subSourcesError');
+ nameError.textContent='';
+ sourcesError.textContent='';
+ if(!name || name.length>80){
+   nameError.textContent='名称不能为空且不能超过 80 个字符。';
+   showToast(nameError.textContent,true);
+   document.getElementById('sub-edit-name').focus();
+   return;
+ }
+ if(!sources.split(/\\r?\\n/).some(source=>source.trim())){
+   sourcesError.textContent='至少添加一个订阅地址或单节点。';
+   showToast(sourcesError.textContent,true);
+   document.getElementById('sub-edit-sources').focus();
+   return;
+ }
  const payload={
    type:oldId?'sub_update':'sub_create',
    id:oldId,
-   name:document.getElementById('sub-edit-name').value.trim(),
-   sources:document.getElementById('sub-edit-sources').value,
+   name,
+   sources,
    enabled:true
  };
 
  AdminUI.setButtonBusy(button,true,'保存中...');
- status.textContent='正在保存...';
  try{
    const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
    const text=await res.text();
@@ -3107,12 +3173,13 @@ async function saveSubs(){
    }
 
    refreshSubscriptionUI();
-   status.textContent='保存成功';
    showToast(oldId?'聚合节点已更新':'聚合节点已创建');
    closeSubsModal();
  }catch(err){
-   status.textContent=err.message||'保存失败';
-   showToast(err.message||'保存失败');
+   const message=err.message||'保存失败';
+   if(/名称/.test(message))document.getElementById('subNameError').textContent=message;
+   else if(/来源|单节点/.test(message))document.getElementById('subSourcesError').textContent=message;
+   showToast(message,true);
  }finally{
    AdminUI.setButtonBusy(button,false);
  }
@@ -3123,19 +3190,22 @@ async function deleteSub(id){
  if(!item)return;
  if(!confirm('确定删除“'+item.name+'”吗？\\n已经绑定它的 URL 会自动解除绑定。'))return;
 
- const res=await fetch(window.location.pathname,{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({type:'sub_delete',id})
- });
- const text=await res.text();
-
- if(!res.ok){showToast(text||'删除失败');return}
- const index=SUBS.findIndex(x=>x.id===id);
- if(index!==-1)SUBS.splice(index,1);
- TOKENS.forEach(t=>{t.subs=Array.isArray(t.subs)?t.subs.filter(x=>x!==id):[];});
- refreshSubscriptionUI();
- showToast('聚合节点已删除');
+ try{
+   const res=await fetch(window.location.pathname,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({type:'sub_delete',id})
+   });
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'删除失败');
+   const index=SUBS.findIndex(x=>x.id===id);
+   if(index!==-1)SUBS.splice(index,1);
+   TOKENS.forEach(t=>{t.subs=Array.isArray(t.subs)?t.subs.filter(x=>x!==id):[];});
+   refreshSubscriptionUI();
+   showToast('聚合节点已删除');
+ }catch(error){
+   showToast(error.message||'删除失败',true);
+ }
 }
 
 function enableLongPressSort(container, itemSelector, onChange){
@@ -3276,7 +3346,7 @@ function openUrlCreate(){
  document.getElementById('url-update-enable').checked=true;
  document.getElementById('url-update').value='60';
  document.getElementById('urlModeNote').textContent='留空自动生成 UUID；可直接输入自定义路径，或点击按钮反复生成。';
- document.getElementById('urlSaveStatus').textContent='';
+ ['urlNameError','urlPathError','urlSubsError','urlUpdateError'].forEach(id=>document.getElementById(id).textContent='');
  renderUrlSubs([]);
  AdminUI.openModal('urlModal');
 }
@@ -3294,7 +3364,7 @@ function editUrl(token){
  document.getElementById('url-update-enable').checked=item.updateEnable !== false;
  document.getElementById('url-update').value=Number.isFinite(Number(item.update)) ? item.update : 60;
  document.getElementById('urlModeNote').textContent='保留原路径即可不变；也可输入自定义路径、留空生成 UUID，或点击按钮反复生成。';
- document.getElementById('urlSaveStatus').textContent='';
+ ['urlNameError','urlPathError','urlSubsError','urlUpdateError'].forEach(id=>document.getElementById(id).textContent='');
  renderUrlSubs(item.subs||[]);
  AdminUI.openModal('urlModal');
 }
@@ -3320,39 +3390,52 @@ async function saveUrl(){
    return input && input.checked;
  }).map(item=>item.dataset.sortId).filter(Boolean);
  const button=document.querySelector('#urlModal button:not(.secondary)');
- const status=document.getElementById('urlSaveStatus');
+ const name=document.getElementById('url-edit-name').value.trim();
+ const nameError=document.getElementById('urlNameError');
+ const subsError=document.getElementById('urlSubsError');
+ const updateError=document.getElementById('urlUpdateError');
+ nameError.textContent='';
+ subsError.textContent='';
+ updateError.textContent='';
 
+ if(!name || name.length>80){
+   nameError.textContent='链接名称不能为空且不能超过 80 个字符。';
+   showToast(nameError.textContent,true);
+   document.getElementById('url-edit-name').focus();
+   return;
+ }
  if(!selected.length){
-   showToast('至少选择一个聚合节点');
+   subsError.textContent='至少选择一个聚合节点。';
+   showToast(subsError.textContent,true);
    return;
  }
 
  const oldUrl=editingUrlValue;
  const update=Number(document.getElementById('url-update').value);
  if(!Number.isFinite(update) || update < 0 || !Number.isInteger(update)){
-   showToast('推荐更新时间必须是非负整数分钟');
+   updateError.textContent='推荐更新时间必须是非负整数分钟。';
+   showToast(updateError.textContent,true);
+   document.getElementById('url-update').focus();
    return;
  }
  const payload=oldUrl?{
    type:'url_update',
    oldUrl,
    newUrl:document.getElementById('url-edit-value').value.trim(),
-   name:document.getElementById('url-edit-name').value.trim(),
+   name,
    subs:selected,
    update,
    updateEnable:document.getElementById('url-update-enable').checked
  }:{
    type:'url_create',
-   name:document.getElementById('url-edit-name').value.trim(),
+   name,
    mode:document.getElementById('url-edit-value').value.trim() ? 'custom' : 'random',
    url:document.getElementById('url-edit-value').value.trim(),
    subs:selected,
    update,
    updateEnable:document.getElementById('url-update-enable').checked
  };
-
  AdminUI.setButtonBusy(button,true,'保存中...');
- status.textContent='正在保存...';
  try{
    const res=await fetch(window.location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
    const text=await res.text();
@@ -3368,12 +3451,13 @@ async function saveUrl(){
    }
 
    refreshSubscriptionUI();
-   status.textContent='保存成功';
    showToast(oldUrl?'订阅链接已更新':'订阅链接已创建');
    closeUrlModal();
  }catch(err){
-   status.textContent=err.message||'保存失败';
-   showToast(err.message||'保存失败');
+   const message=err.message||'保存失败';
+   if(/名称/.test(message))nameError.textContent=message;
+   else if(/路径|URL/.test(message))document.getElementById('urlPathError').textContent=message;
+   showToast(message,true);
  }finally{
    AdminUI.setButtonBusy(button,false);
  }
@@ -3384,18 +3468,21 @@ async function deleteUrl(token){
  if(!item)return;
  if(!confirm('确定删除“'+item.name+'”吗？'))return;
 
- const res=await fetch(window.location.pathname,{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({type:'url_delete',url:token})
- });
- const text=await res.text();
-
- if(!res.ok){showToast(text||'删除失败');return}
- const index=TOKENS.findIndex(x=>x.url===token);
- if(index!==-1)TOKENS.splice(index,1);
- renderUrlList();
- showToast('订阅链接已删除');
+ try{
+   const res=await fetch(window.location.pathname,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({type:'url_delete',url:token})
+   });
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'删除失败');
+   const index=TOKENS.findIndex(x=>x.url===token);
+   if(index!==-1)TOKENS.splice(index,1);
+   renderUrlList();
+   showToast('订阅链接已删除');
+ }catch(error){
+   showToast(error.message||'删除失败',true);
+ }
 }
 
 document.querySelectorAll('.modal-overlay').forEach(function(modal){
