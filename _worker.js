@@ -633,7 +633,15 @@ async function listTokens(env) {
         cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
 
-    result.sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-CN'));
+    const hasExplicitOrder = result.some(item => Number.isFinite(Number(item.order)));
+    result.sort((a, b) => {
+        if (hasExplicitOrder) {
+            const ao = Number.isFinite(Number(a.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+            const bo = Number.isFinite(Number(b.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+            if (ao !== bo) return ao - bo;
+        }
+        return String(a.name).localeCompare(String(b.name), 'zh-CN');
+    });
     return result;
 }
 
@@ -1121,6 +1129,12 @@ async function handleAdmin(request, env, runtime) {
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
+                const existingTokens = await listTokens(env);
+                if (existingTokens.some(existing => Number.isFinite(Number(existing.order)))) {
+                    item.order = existingTokens.reduce((max, existing) =>
+                        Number.isFinite(Number(existing.order)) ? Math.max(max, Number(existing.order)) : max
+                    , -1) + 1;
+                }
 
                 await env.KV.put(`${URL_PREFIX}${token}`, serializeKVJson(item));
                 return jsonResponse({ ok: true, url: item });
@@ -1174,6 +1188,30 @@ async function handleAdmin(request, env, runtime) {
                 }
 
                 return jsonResponse({ ok: true, url: item, oldUrl: oldToken });
+            }
+
+            if (data.type === 'url_reorder') {
+                const urls = Array.isArray(data.urls)
+                    ? [...new Set(data.urls.map(String).filter(Boolean))]
+                    : [];
+
+                if (!urls.length) return new Response('排序数据不能为空', { status: 400 });
+
+                const tokens = await listTokens(env);
+                const byUrl = new Map(tokens.map(item => [String(item.url), item]));
+                if (urls.length !== tokens.length || urls.some(url => !byUrl.has(url))) {
+                    return new Response('订阅链接排序数据不完整', { status: 400 });
+                }
+
+                const now = Date.now();
+                await Promise.all(urls.map((url, index) => {
+                    const item = byUrl.get(url);
+                    item.order = index;
+                    item.updatedAt = new Date(now + index).toISOString();
+                    return env.KV.put(`${URL_PREFIX}${url}`, serializeKVJson(item));
+                }));
+
+                return jsonResponse({ ok: true, urls });
             }
 
             if (data.type === 'url_delete') {
@@ -2567,8 +2605,9 @@ ${tokens.length ? tokens.map(t => {
     });
 
     return `
-<div class="sub-row">
+<div class="sub-row sortable-item" data-sort-id="${escapeHTML(t.url)}">
 <div class="sub-head">
+<span class="drag-handle" aria-hidden="true">⋮⋮</span>
 <div style="min-width:0;">
 <div class="sub-name">${escapeHTML(t.name)}</div>
 <div class="sub-count">URL：${escapeHTML(t.url)}</div>
@@ -2760,6 +2799,31 @@ function reorderSubListFromDOM(){
  });
 }
 
+function reorderUrlListFromDOM(){
+ const box=document.getElementById('url-list');
+ if(!box)return;
+ const orderedUrls=[...box.querySelectorAll('.sortable-item')].map(function(item){return item.dataset.sortId;}).filter(Boolean);
+ if(!orderedUrls.length || orderedUrls.length!==TOKENS.length)return;
+ const previousTokens=TOKENS.slice();
+ const orderMap=new Map(orderedUrls.map(function(url,index){return[String(url),index]}));
+ TOKENS.sort(function(a,b){
+   return (orderMap.get(String(a.url))??Number.MAX_SAFE_INTEGER)-(orderMap.get(String(b.url))??Number.MAX_SAFE_INTEGER);
+ });
+ fetch(window.location.pathname,{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({type:'url_reorder',urls:orderedUrls})
+ }).then(async function(res){
+   const text=await res.text();
+   if(!res.ok)throw new Error(text||'排序失败');
+   showToast('订阅链接顺序已更新');
+ }).catch(function(error){
+   TOKENS.splice(0,TOKENS.length,...previousTokens);
+   showToast(error.message||'排序失败');
+   renderUrlList();
+ });
+}
+
 function renderSubList(){
  const box=document.getElementById('sub-list');
  if(!box)return;
@@ -2807,11 +2871,14 @@ function renderUrlList(){
    const chips=subNames.length
      ? subNames.map(function(x){return '<span class="chip">'+escapeJS(x)+'</span>';}).join('')
      : '<span class="small-note">未绑定聚合节点</span>';
-   return '<div class="sub-row">'
+   return '<div class="sub-row sortable-item" data-sort-id="'+path+'">'
     +'<div class="sub-head">'
+    +'<span class="drag-handle" aria-hidden="true">⋮⋮</span>'
+    +'<div class="sub-head-main">'
     +'<div style="min-width:0;">'
     +'<div class="sub-name">'+name+'</div>'
     +'<div class="sub-count">URL：'+path+'</div>'
+    +'</div>'
     +'</div>'
     +'<div class="actions" style="margin-top:0;">'
     +'<button type="button" onclick="copyValue(\\\''+safeUrl+'\\\')">复制</button>'
@@ -2823,6 +2890,7 @@ function renderUrlList(){
     +'<div style="margin-top:8px;">'+chips+'</div>'
     +'</div>';
  }).join('');
+ enableLongPressSort(box,'.sortable-item',reorderUrlListFromDOM);
 }
 
 function refreshSubscriptionUI(){
