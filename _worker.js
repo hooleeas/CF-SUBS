@@ -384,7 +384,9 @@ async function probeBackend(apiUrl, configUrl, timeoutMs = 8e3) {
     };
 }
 
-async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomConfig) {
+async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomConfig, checks = {}) {
+    const checkApi = checks.api !== false;
+    const checkConfig = checks.config !== false;
     let customApiOk = false;
     let customApiVersion = '';
     let defaultApiOk = false;
@@ -402,26 +404,30 @@ async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomCo
         return (await probeBackend('', configUrl)).config.ok;
     }
 
-    if (hasCustomApi) {
-        const res = await probeApi(api, protocol);
-        customApiOk = res.ok;
-        customApiVersion = res.version || '';
-        if (!customApiOk) {
+    if (checkApi) {
+        if (hasCustomApi) {
+            const res = await probeApi(api, protocol);
+            customApiOk = res.ok;
+            customApiVersion = res.version || '';
+            if (!customApiOk) {
+                const resDef = await probeApi(defaultSubConverter, defaultSubProtocol);
+                defaultApiOk = resDef.ok;
+                defaultApiVersion = resDef.version || '';
+            }
+        } else {
             const resDef = await probeApi(defaultSubConverter, defaultSubProtocol);
             defaultApiOk = resDef.ok;
             defaultApiVersion = resDef.version || '';
         }
-    } else {
-        const resDef = await probeApi(defaultSubConverter, defaultSubProtocol);
-        defaultApiOk = resDef.ok;
-        defaultApiVersion = resDef.version || '';
     }
 
-    if (hasCustomConfig) {
-        customConfigOk = await probeConfig(config);
-        if (!customConfigOk) defaultConfigOk = await probeConfig(defaultSubConfig);
-    } else {
-        defaultConfigOk = await probeConfig(defaultSubConfig);
+    if (checkConfig) {
+        if (hasCustomConfig) {
+            customConfigOk = await probeConfig(config);
+            if (!customConfigOk) defaultConfigOk = await probeConfig(defaultSubConfig);
+        } else {
+            defaultConfigOk = await probeConfig(defaultSubConfig);
+        }
     }
 
     let adminApiHtml = '';
@@ -773,12 +779,20 @@ async function handleAdminStatus(request, runtime) {
         return new Response('Method Not Allowed', { status: 405 });
     }
 
+    const check = new URL(request.url).searchParams.get('check');
+    if (check && check !== 'api' && check !== 'config') {
+        return new Response('无效的状态检查类型', { status: 400 });
+    }
     const status = await getBackendStatus(
         runtime.effectiveSubConverter,
         runtime.effectiveSubConfig,
         runtime.effectiveSubProtocol,
         runtime.hasCustomApi,
-        runtime.hasCustomConfig
+        runtime.hasCustomConfig,
+        {
+            api: !check || check === 'api',
+            config: !check || check === 'config'
+        }
     );
     return jsonResponse(status);
 }
@@ -3495,29 +3509,51 @@ document.querySelectorAll('.modal-overlay').forEach(function(modal){
  });
 });
 
-async function refreshBackendStatus(){
+const backendStatusTimers={api:null,config:null};
+const backendStatusChecking={api:false,config:false};
+
+function backendStatusIsAvailable(statusElement){
+ return !!statusElement && !statusElement.classList.contains('status-error');
+}
+
+async function refreshBackendStatus(check){
+ if(backendStatusChecking[check])return false;
+ backendStatusChecking[check]=true;
  try{
-    const statusUrl=window.location.pathname+'/status';
+    const statusUrl=window.location.pathname+'/status?check='+check;
      const response=await fetch(statusUrl,{cache:'no-store'});
      if(!response.ok)throw new Error('状态检查失败（HTTP '+response.status+'）');
      const status=await response.json();
-     const subApiStatus=document.getElementById('subapi-status');
-     const subApiUrl=document.getElementById('subapi-url');
-     const subConfigStatus=document.getElementById('subconfig-status');
-     const subConfigUrl=document.getElementById('subconfig-url');
-     if(subApiStatus){subApiStatus.className='status-indicator '+status.adminApiCss;subApiStatus.innerHTML=status.adminApiHtml;}
-     if(subApiUrl){subApiUrl.href=status.finalApiUrl;subApiUrl.textContent=status.finalApiUrl;}
-     if(subConfigStatus){subConfigStatus.className='status-indicator '+status.adminConfigCss;subConfigStatus.innerHTML=status.adminConfigHtml;}
-     if(subConfigUrl){subConfigUrl.href=status.finalConfigUrl;subConfigUrl.textContent=status.finalConfigUrl;}
+     const isApi=check==='api';
+     const statusElement=document.getElementById(isApi?'subapi-status':'subconfig-status');
+     const urlElement=document.getElementById(isApi?'subapi-url':'subconfig-url');
+     const css=isApi?status.adminApiCss:status.adminConfigCss;
+     const html=isApi?status.adminApiHtml:status.adminConfigHtml;
+     const finalUrl=isApi?status.finalApiUrl:status.finalConfigUrl;
+     if(statusElement){statusElement.className='status-indicator '+css;statusElement.innerHTML=html;}
+     if(urlElement){urlElement.href=finalUrl;urlElement.textContent=finalUrl;}
+     const available=backendStatusIsAvailable(statusElement);
+     if(available && backendStatusTimers[check]){
+       window.clearInterval(backendStatusTimers[check]);
+       backendStatusTimers[check]=null;
+     }
+     return available;
  }catch(error){
    console.warn('管理面板状态刷新失败:',error);
+   return false;
+ }finally{
+   backendStatusChecking[check]=false;
  }
 }
 
 switchFakeMode();
 refreshSubscriptionUI();
-refreshBackendStatus();
-window.setInterval(refreshBackendStatus,10000);
+['api','config'].forEach(function(check){
+ const statusElement=document.getElementById(check==='api'?'subapi-status':'subconfig-status');
+ if(!backendStatusIsAvailable(statusElement)){
+   backendStatusTimers[check]=window.setInterval(function(){refreshBackendStatus(check)},10000);
+ }
+});
 </script>
 </body>
 </html>`;
