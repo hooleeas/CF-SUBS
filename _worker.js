@@ -2261,20 +2261,28 @@ function getSubUIStyles() {
 
 
 
-function getSubscriptionLinks(url, token) {
+function getSingBoxImportLink(profileName, remoteUrl) {
+    const importLink = new URL('sing-box://import-remote-profile');
+    importLink.searchParams.set('url', remoteUrl);
+    if (profileName) importLink.hash = profileName;
+    return importLink.toString();
+}
+
+function getSubscriptionLinks(url, token, profileName = '') {
     const base = `${url.origin}/${token}`;
+    const singboxUrl = `${base}?sb`;
     return [
-        ['自适应订阅地址', base],
+        ['自适应订阅地址', base, getSingBoxImportLink(profileName, base)],
         ['Base64订阅地址', `${base}?b64`],
         ['Clash订阅地址', `${base}?clash`],
-        ['Sing-box订阅地址', `${base}?sb`],
+        ['Sing-box订阅地址', singboxUrl, getSingBoxImportLink(profileName, singboxUrl)],
         ['Surge订阅地址', `${base}?surge`],
         ['Loon订阅地址', `${base}?loon`],
     ];
 }
 
 function renderGuestPage(url, guest, guestName = '', siteLogo = '') {
-    const links = getSubscriptionLinks(url, guest);
+    const links = getSubscriptionLinks(url, guest, guestName);
     return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -2297,16 +2305,16 @@ ${getSubUIStyles()}
 <body>
 <div id="copyNotice" class="toast" role="status" aria-live="polite"></div>
 <main class="page app-shell guest-shell">
-<header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">复制订阅链接可同时生成二维码</div></header>
+<header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">复制订阅链接可同时生成二维码；自适应和 Sing-box 二维码可直接导入 Sing-box 远程 Profile</div></header>
 <div class="guest-link-list">
-${links.map(([label,value])=>`<div class="guest-link-item"><div class="guest-link-head"><div class="guest-link-label">${escapeHTML(label)}</div></div><a class="guest-link-url" href="${escapeHTML(value)}" target="_blank" rel="noopener">${escapeHTML(value)}</a><div class="guest-actions"><button type="button" class="button guest-copy-btn" data-url="${escapeHTML(value)}" onclick="copyGuest(this)">复制</button><button type="button" class="button secondary guest-hide-btn" onclick="hideGuestQr(this)" style="display:none">隐藏二维码</button></div><div class="guest-qrcode"></div></div>`).join('')}
+${links.map(([label,value,qrContent])=>`<div class="guest-link-item"><div class="guest-link-head"><div class="guest-link-label">${escapeHTML(label)}</div></div><a class="guest-link-url" href="${escapeHTML(value)}" target="_blank" rel="noopener">${escapeHTML(value)}</a><div class="guest-actions"><button type="button" class="button guest-copy-btn" data-url="${escapeHTML(value)}" data-qr-content="${escapeHTML(qrContent || value)}" onclick="copyGuest(this)">复制</button><button type="button" class="button secondary guest-hide-btn" onclick="hideGuestQr(this)" style="display:none">隐藏二维码</button></div><div class="guest-qrcode"></div></div>`).join('')}
 </div>
 </main>
 <script>
 let guestToastTimer;
 function guestToast(message,isError){const el=document.getElementById('copyNotice');el.textContent=message;el.style.background=isError?'#b42318':'rgba(0,0,0,.82)';el.style.display='block';clearTimeout(guestToastTimer);guestToastTimer=setTimeout(()=>el.style.display='none',1800)}
 function copyGuest(button){const value=button.dataset.url||'';const done=()=>{guestToast('已复制到剪贴板');showGuestQr(button)};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(value).then(done).catch(()=>guestToast('复制失败，请手动复制',true));else{const ta=document.createElement('textarea');ta.value=value;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done()}catch(e){guestToast('复制失败，请手动复制',true)}ta.remove()}}
-function showGuestQr(button){const item=button.closest('.guest-link-item');const qr=item&&item.querySelector('.guest-qrcode');const copy=item&&item.querySelector('.guest-copy-btn');const hide=item&&item.querySelector('.guest-hide-btn');if(!item||!qr)return;document.querySelectorAll('.guest-link-item').forEach(function(x){if(x===item)return;const q=x.querySelector('.guest-qrcode'),c=x.querySelector('.guest-copy-btn'),h=x.querySelector('.guest-hide-btn');if(q){q.style.display='none';q.innerHTML=''}if(c)c.style.display='inline-flex';if(h)h.style.display='none'});qr.innerHTML='';qr.style.display='block';if(copy)copy.style.display='none';if(hide)hide.style.display='inline-flex';if(window.QRCode)new QRCode(qr,{text:value=button.dataset.url,width:220,height:220,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.Q})}
+function showGuestQr(button){const item=button.closest('.guest-link-item');const qr=item&&item.querySelector('.guest-qrcode');const copy=item&&item.querySelector('.guest-copy-btn');const hide=item&&item.querySelector('.guest-hide-btn');if(!item||!qr)return;document.querySelectorAll('.guest-link-item').forEach(function(x){if(x===item)return;const q=x.querySelector('.guest-qrcode'),c=x.querySelector('.guest-copy-btn'),h=x.querySelector('.guest-hide-btn');if(q){q.style.display='none';q.innerHTML=''}if(c)c.style.display='inline-flex';if(h)h.style.display='none'});qr.innerHTML='';qr.style.display='block';if(copy)copy.style.display='none';if(hide)hide.style.display='inline-flex';if(window.QRCode)new QRCode(qr,{text:button.dataset.qrContent||button.dataset.url,width:220,height:220,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.Q})}
 function hideGuestQr(button){const item=button.closest('.guest-link-item');if(!item)return;const q=item.querySelector('.guest-qrcode'),c=item.querySelector('.guest-copy-btn'),h=item.querySelector('.guest-hide-btn');if(q){q.style.display='none';q.innerHTML=''}if(c)c.style.display='inline-flex';if(h)h.style.display='none'}
 </script></body></html>`;
 }
