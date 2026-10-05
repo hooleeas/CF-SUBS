@@ -2341,7 +2341,7 @@ ${getSubUIStyles()}
 <body>
 <div id="copyNotice" class="toast" role="status" aria-live="polite"></div>
 <main class="page app-shell guest-shell">
-<header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">Sing-box 请扫描专属二维码导入；iOS/iPadOS 也可在 Safari 中长按二维码并选择导入 Sing-box。</div></header>
+<header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">点击复制按钮将同时生成对应二维码。Sing-box 可扫描专属二维码导入；iOS/iPadOS 可在 Safari 本页长按 Sing-box 专属二维码并选择导入 Sing-box。</div></header>
 <div class="guest-link-list">
 ${links.map(([label,value,qrContent])=>`<div class="guest-link-item"><div class="guest-link-head"><div class="guest-link-label">${escapeHTML(label)}</div></div><a class="guest-link-url" href="${escapeHTML(value)}" target="_blank" rel="noopener">${escapeHTML(value)}</a><div class="guest-actions"><button type="button" class="button guest-copy-btn" data-url="${escapeHTML(value)}" data-qr-content="${escapeHTML(qrContent || value)}" onclick="copyGuest(this)">复制</button><button type="button" class="button secondary guest-hide-btn" onclick="hideGuestQr(this)" style="display:none">隐藏二维码</button></div><div class="guest-qrcode"></div></div>`).join('')}
 </div>
