@@ -285,9 +285,40 @@ async function handleRequest(request, env) {
                 'v2rayn',
                 userAgentHeader
             );
-            const nodes = filterSubscriptionNodes(sourceData.nodes, configNoAds);
+            let nodes = sourceData.nodes;
+            if (sourceData.structuredUrls.length) {
+                try {
+                    const converted = await fetchConvertedSubscription(
+                        {
+                            effectiveSubConverter,
+                            effectiveSubConfig,
+                            effectiveSubProtocol
+                        },
+                        'mixed',
+                        sourceData.structuredUrls.join('|'),
+                        userAgentHeader
+                    );
+                    nodes = [...nodes, ...(await ADD(converted)).filter(line => line.includes('://'))];
+                } catch (error) {
+                    console.error('Structured subscription filtering failed:', error);
+                    return new Response(
+                        `结构化订阅过滤失败：${getSubscriptionErrorMessage(error)}`,
+                        {
+                            status: 502,
+                            headers: {
+                                'Content-Type': 'text/plain; charset=utf-8',
+                                'Cache-Control': 'no-store'
+                            }
+                        }
+                    );
+                }
+            }
+            nodes = filterSubscriptionNodes(nodes, configNoAds);
             return new Response(encodeBase64(nodes.join('\n')), {
-                headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+                headers: {
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'Cache-Control': 'no-store'
+                }
             });
         }
 
@@ -1506,7 +1537,7 @@ async function generateSubscription(request, sourceList, runtime, token) {
     const internalFeed = new URL(`/${encodeURIComponent(runtime.fakeToken)}`, requestUrl.origin);
     internalFeed.searchParams.set('token', runtime.fakeToken);
     if (sourceToken) internalFeed.searchParams.set('sourceToken', sourceToken);
-    const converterInput = [internalFeed.href, ...sourceData.structuredUrls].join('|');
+    const converterInput = internalFeed.href;
 
     try {
         let content = await fetchConvertedSubscription(
@@ -1610,8 +1641,13 @@ function filterSubscriptionNodes(nodes, noAds) {
         .map(keyword => keyword.trim().toLowerCase())
         .filter(Boolean);
     return [...new Set(nodes.filter(line => {
-        const lowerLine = line.toLowerCase();
-        return !keywords.some(keyword => lowerLine.includes(keyword));
+        let searchableLine = line.toLowerCase();
+        try {
+            searchableLine += ` ${decodeURIComponent(line).toLowerCase()}`;
+        } catch {
+            // Keep matching the original line when it contains invalid percent escapes.
+        }
+        return !keywords.some(keyword => searchableLine.includes(keyword));
     }))];
 }
 
@@ -2272,7 +2308,7 @@ function getSubscriptionLinks(url, token, profileName = '') {
     const base = `${url.origin}/${token}`;
     const singboxUrl = `${base}?sb`;
     return [
-        ['自适应订阅地址', base, getSingBoxImportLink(profileName, base)],
+        ['自适应订阅地址', base],
         ['Base64订阅地址', `${base}?b64`],
         ['Clash订阅地址', `${base}?clash`],
         ['Sing-box订阅地址', singboxUrl, getSingBoxImportLink(profileName, singboxUrl)],
@@ -2305,7 +2341,7 @@ ${getSubUIStyles()}
 <body>
 <div id="copyNotice" class="toast" role="status" aria-live="polite"></div>
 <main class="page app-shell guest-shell">
-<header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">复制订阅链接可同时生成二维码；自适应和 Sing-box 二维码可直接导入 Sing-box 远程 Profile</div></header>
+<header class="header guest-header"><h1 class="title" style="font-size:26px">聚合订阅链接</h1><div class="subtitle">自适应二维码适用于支持订阅 URL 的客户端；Sing-box 项二维码用于导入远程 Profile</div></header>
 <div class="guest-link-list">
 ${links.map(([label,value,qrContent])=>`<div class="guest-link-item"><div class="guest-link-head"><div class="guest-link-label">${escapeHTML(label)}</div></div><a class="guest-link-url" href="${escapeHTML(value)}" target="_blank" rel="noopener">${escapeHTML(value)}</a><div class="guest-actions"><button type="button" class="button guest-copy-btn" data-url="${escapeHTML(value)}" data-qr-content="${escapeHTML(qrContent || value)}" onclick="copyGuest(this)">复制</button><button type="button" class="button secondary guest-hide-btn" onclick="hideGuestQr(this)" style="display:none">隐藏二维码</button></div><div class="guest-qrcode"></div></div>`).join('')}
 </div>
