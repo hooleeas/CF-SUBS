@@ -8,595 +8,130 @@
 
 ---
 
-## ✨ 核心特性
+## ✨ 功能一览
 
-### 1. 多 SUB 聚合管理
+| 功能 | 简单说明 |
+|---|---|
+| 聚合节点（SUB） | 添加机场订阅或单个节点，可组合复用 |
+| 订阅链接（URL） | 选择 SUB 生成公开链接，可设置名称和路径 |
+| 格式转换 | 自适应、Base64、Clash、Sing-box、Surge、Loon |
+| 节点屏蔽 | 填写关键词，自动排除匹配节点 |
+| 网页管理 | 在后台管理订阅、转换配置和网站设置 |
+| 安全与外观 | 管理员登录、主页自定义、深色模式 |
 
-支持创建多个独立的 **聚合节点（SUB）**。
-
-每个 SUB 可以包含：
-
-- 机场订阅 URL
-- VLESS / VMess / Trojan 等自建节点
-- 多个订阅地址与多个自建节点混合使用
-
-SUB 本身只负责保存和组织节点来源，**不会直接生成公开订阅链接**。
-
-一个 SUB 可以被多个订阅链接使用，一个订阅链接也可以同时绑定多个 SUB。
-
----
-
-### 2. 独立订阅链接管理
-
-订阅链接与 SUB 完全分离。
-
-创建订阅链接时，可以选择一个或多个 SUB。
-
-支持：
-
-- 自定义订阅链接路径
-- 留空自动生成随机路径
-- 留空时自动生成 UUID 路径
-- 修改订阅链接路径
-- 修改订阅链接名称
-- 修改绑定的 SUB
-- 删除订阅链接
-- 一个订阅链接绑定多个 SUB
-- 一个 SUB 被多个订阅链接复用
-
-例如：
+### 工作流程
 
 ```text
-https://example.com/my-sub
-https://example.com/ABC123
+添加订阅 / 节点
+       ↓
+整理到 SUB
+       ↓
+选择 SUB，创建 URL
+       ↓
+复制链接或二维码，导入客户端
 ```
 
-修改或删除后，管理后台会直接更新当前页面状态，**无需手动刷新网页**。
-
----
-
-### 3. 多客户端格式自适应
-
-系统会根据客户端 User-Agent 自动识别订阅格式。
-
-支持：
-
-| 订阅格式 | 参数示例 | 适用客户端 |
-|------|------|------|
-| **智能自适应** | `/my-sub` | 所有主流客户端 |
-| **Base64** | `/my-sub?b64` | v2rayN、v2rayNG 等 |
-| **Clash** | `/my-sub?clash` | Clash、Clash Meta、Mihomo 等 |
-| **Sing-box** | `/my-sub?sb` | Sing-box、NekoBox 等 |
-| **Surge** | `/my-sub?surge` | Surge |
-| **Loon** | `/my-sub?loon` | Loon |
-
-通常情况下，只需要把普通订阅链接直接添加到客户端即可。
-
----
-
-### 4. 节点屏蔽（NOADS）
-
-支持在后台配置需要屏蔽的关键字。
-
-系统会在节点输出前自动过滤名称中包含指定关键字的节点。
-
-支持：
-
-- 英文逗号
-- 空格
-- 换行
-
-例如：
-
-```text
-加入TG群
-YouTube
-https://t.me
-```
-
----
-
-### 5. SUBAPI / SUBCONFIG
-
-系统保留订阅格式转换能力。
-
-#### SUBAPI
-
-用于将聚合后的通用订阅转换为 Clash、Sing-box、Surge、Loon 等客户端格式。
-
-后台支持：
-
-- 查看当前 SUBAPI 状态
-- 修改 SUBAPI
-- 连通性检测
-- 自定义 SUBAPI
-- 自定义配置无效时自动使用默认配置
-
-默认 SUBAPI：
-
-```text
-SUBAPI.cmliussss.net
-```
-
-#### SUBCONFIG
-
-用于订阅转换时的分流规则、测速分组等配置。
-
-当前默认配置：
-
-```text
-https://raw.githubusercontent.com/hooleeas/ACL4SSR/refs/heads/master/Clash/config/China_Direct_Overseas_Proxy.ini
-```
-
-后台可以直接修改，并实时检测配置是否有效。
-
----
-
-### 6. 访客订阅页面
-
-订阅链接对应的公开页面只提供**订阅地址**相关功能。
-
-访客页面包括：
-
-- 智能自适应订阅地址
-- Base64 订阅地址
-- Clash 订阅地址
-- Sing-box 订阅地址
-- Surge 订阅地址
-- Loon 订阅地址
-- 一键复制
-- 二维码
-
-访客页面不提供管理配置入口，也不会展示后台管理功能。
-
----
-
-### 7. 可视化管理后台
-
-绑定 KV 后，可以直接通过网页后台管理整个项目。
-
-后台支持：
-
-- 聚合节点（SUB）管理
-- 订阅链接（URL）管理
-- SUBNAME
-- SUBAPI
-- SUBCONFIG
-- 节点屏蔽（NOADS）
-- 主页设置
-- 安全设置
-- 管理员账号密码
-- 管理员入口路径
-
-所有主要配置都可以通过可视化界面完成，不需要频繁修改代码。
-
----
-
-### 8. 实时前端状态更新
-
-创建、编辑、删除 SUB 和订阅链接后，前端会直接更新当前页面的数据。
-
-不会因为 Cloudflare KV 的最终一致性而要求用户反复刷新网页。
-
-例如：
-
-```text
-创建 SUB
-↓
-保存成功
-↓
-立即显示新的 SUB
-```
-
-以及：
-
-```text
-编辑订阅链接
-↓
-保存成功
-↓
-立即更新当前订阅链接
-```
-
-删除同样会立即从当前页面移除。
-
----
-
-### 9. 深色模式
-
-管理后台和订阅页面支持系统深色模式。
-
-SUB、订阅链接、来源列表、标签以及编辑界面均针对深色模式进行了适配。
-
----
-
-### 10. 主页伪装与防探测
-
-直接访问根域名或者无效路径时，可以根据后台配置显示不同的主页内容。
-
-支持：
-
-- 默认 NGINX 页面
-- URL 反向代理
-- URL 302 重定向
-- 自定义 HTML
-
-可以使用普通网页作为项目主页，避免直接暴露订阅服务入口。
-
----
-
-### 11. 管理员安全登录
-
-管理后台使用独立的管理员登录机制。
-
-支持：
-
-- 用户名
-- 密码
-- 管理员入口路径
-- Cookie 会话
-- 一键退出
-- 修改管理员入口路径后立即生效
-
-管理员入口默认：
-
-```text
-/admin
-```
-
-可以在后台安全设置中修改。
+> 一个 SUB 可以被多个 URL 复用；一个 URL 也可以组合多个 SUB。
+
+### 支持的订阅格式
+
+| 格式 | 链接示例 | 常见客户端 |
+|---|---|---|
+| 自适应 | `/my-sub` | 自动识别格式的客户端 |
+| Base64 | `/my-sub?b64` | v2rayN、v2rayNG |
+| Clash | `/my-sub?clash` | Clash、Mihomo |
+| Sing-box | `/my-sub?sb` | Sing-box、NekoBox |
+| Surge | `/my-sub?surge` | Surge |
+| Loon | `/my-sub?loon` | Loon |
+
+一般直接使用自适应链接即可。
 
 ---
 
 ## 📦 部署与配置
 
-本项目支持 **Cloudflare Pages** 和 **Cloudflare Workers** 部署。
-
-整体部署流程与之前版本基本一致。
-
-### 方式一：Pages 部署
-
-1. 将项目部署到 GitHub。
-2. 在 Cloudflare Pages 中连接 GitHub 仓库。
-3. 使用项目中的 `_worker.js` 作为 Pages Functions Worker。
-4. 绑定 Cloudflare KV。
-5. KV 绑定名称必须严格使用：
+### 部署流程
 
 ```text
-KV
+Fork 项目 → 创建 KV → 部署项目 → 绑定 KV → 打开 /admin
 ```
 
-6. 完成部署后访问管理员入口。
+### 选择部署方式
 
-### 方式二：Workers 部署
+| Pages（连接 GitHub） | Workers（粘贴代码） |
+|---|---|
+| 1. Fork 本项目仓库。<br>2. 在 Cloudflare Pages 创建项目并连接 Fork 的仓库。<br>3. 构建命令留空，输出目录填写 `.`。 | 1. 在 Cloudflare Workers 创建 Worker。<br>2. 复制项目 `_worker.js` 全部内容并部署。 |
 
-1. 创建 Cloudflare Worker。
-2. 将 `_worker.js` 的完整代码复制到 Worker。
-3. 部署 Worker。
-4. 在 Worker 的设置中绑定 Cloudflare KV。
-5. KV 绑定名称必须严格使用：
+### 绑定 KV
 
-```text
-KV
-```
+先在 Cloudflare 创建一个 KV Namespace，再按部署方式添加绑定：
 
-6. 部署完成后访问管理员入口。
+| Pages | Workers |
+|---|---|
+| **Settings → Functions → KV Namespace Bindings** | **Settings → Bindings → KV Namespace** |
 
----
+绑定变量名填写 **`KV`**，并选择刚创建的 KV Namespace。Namespace 名称可自定义。
 
-## 🔐 Cloudflare 配置
-
-CF-SUB 不依赖 Cloudflare 后台的 Environment Variables。无需配置 `USER`、`PASS`、`URL`、`URL302`、`CODE`、`SUBUPTIME`、`WARP`、`SUBSOURCE_URL` 或 `TOKEN`。
-
-运行时只需配置一个 KV Namespace Binding：绑定名称填写 `KV`，并在 CF-SUB 后台管理所有应用配置。管理员账号密码、主页模式和订阅设置保存在 KV 的 `CONFIG.json` 中。
-
----
-
-## 🗄️ KV 配置
-
-项目只需要使用一个 Cloudflare KV Namespace。
-
-### KV Binding
-
-绑定名称必须严格填写：
-
-```text
-KV
-```
-
-例如：
-
-```text
-变量名称：KV
-KV Namespace：你创建的任意 KV Namespace
-```
-
-KV Namespace 的实际名称可以自定义，但 Worker / Pages 中的 **Binding Name 必须是 `KV`**。
-
-KV 用于保存：
-
-- 项目配置
-- SUB
-- 订阅链接
-- 管理员配置
-- 主页设置
-- 安全设置
+部署完成后，打开 `https://你的域名/admin` 进入后台。无需设置环境变量。
 
 ---
 
 ## 🌐 域名设置
 
-### Pages
+| 部署方式 | 默认域名 | 自定义域名 |
+|---|---|---|
+| Pages | `项目名.pages.dev` | Pages → **Custom Domains** |
+| Workers | `项目名.workers.dev` | Workers → **Custom Domains** |
 
-可以直接使用 Cloudflare Pages 提供的：
-
-```text
-xxx.pages.dev
-```
-
-也可以在 Cloudflare Pages 的 **Custom Domains** 中绑定自己的域名。
-
-### Workers
-
-可以使用：
-
-```text
-xxx.workers.dev
-```
-
-也可以通过 Cloudflare 的自定义域名功能绑定自己的域名。
-
-推荐使用自己的域名作为最终订阅域名。
+可先用默认域名访问，之后再绑定自己的域名。
 
 ---
 
 ## 🖥️ 网页后台配置
 
-首次进入管理员后台后，可以根据需要完成以下配置。
+不确定怎么设置时，先保留默认值。常用项目如下：
 
-### SUBNAME
+| 项目 | 用来做什么 | 怎么填写 |
+|---|---|---|
+| 站点名称（SUBNAME） | 网站和订阅显示的名称 | 例如 `CF-SUBS` |
+| SUB | 存放订阅地址或单个节点 | 先建一个 SUB，再添加来源 |
+| URL | 生成给客户端使用的订阅链接 | 选择要包含的 SUB |
+| SUBAPI / SUBCONFIG | 转换订阅格式、应用规则 | 新手先用默认配置 |
+| NOADS | 排除包含关键词的节点 | 每行一个关键词，如 `YouTube`、`t.me` |
+| 更新时间 | 提示客户端多久更新一次 | 默认开启，60 分钟；可按需调整 |
+| 主页设置 | 设置根域名访问时显示的内容 | 可先保留默认值 |
+| 管理员安全 | 保护后台登录 | 设置自己的用户名和密码 |
 
-用于设置：
-
-- 网站名称
-- 订阅名称
-- 客户端订阅显示名称
-
-例如：
-
-```text
-CF-SUBS
-```
-
----
-
-### SUB
-
-**聚合节点（SUB）**。
-
-例如：
-
-```text
-日本
-美国
-自建节点
-机场订阅
-```
-
-一个 SUB 可以保存多个订阅地址和自建节点。
-
-每个 SUB 还可以独立设置推荐更新时间：
-
-- `UPDATE`：分钟数，默认 `60`
-- `UPDATE_ENABLE`：是否向客户端推荐自动更新，默认 `true`
-
-KV 中保存为全大写字段：
-
-```json
-{
-  "UPDATE": 60,
-  "UPDATE_ENABLE": true
-}
-```
-
-关闭 `UPDATE_ENABLE` 只会关闭推荐自动更新时间，不会修改 `UPDATE` 的分钟数。旧 SUB 缺少这两个字段时，按“开启 + 60 分钟”处理。
-
----
-
-### URL
-
-**订阅链接（URL）**。
-
-例如：
-
-```text
-日本主订阅
-美国订阅
-全节点订阅
-```
-
-创建 URL 时选择需要绑定的 SUB。
-
----
-
-### SUBAPI
-
-订阅转换后端。
-
-默认：
-
-```text
-SUBAPI.cmliussss.net
-```
-
-如果不需要自定义 SUBAPI，可以保持默认配置。
-
----
-
-### SUBCONFIG
-
-订阅转换规则。
-
-默认：
-
-```text
-https://raw.githubusercontent.com/hooleeas/ACL4SSR/refs/heads/master/Clash/config/China_Direct_Overseas_Proxy.ini
-```
-
----
-
-### NOADS
-
-节点屏蔽关键字。
-
-例如：
-
-```text
-TG群
-YouTube
-t.me
-```
-
----
-
-### 主页设置
-
-可以选择：
-
-```text
-默认 NGINX
-URL 反向代理
-URL302
-自定义 HTML
-```
-
-用于处理根域名和无效访问路径。
-
----
-
-### 安全设置
-
-可以设置：
-
-```text
-管理员用户名
-管理员密码
-管理员入口路径
-```
-
-管理员入口默认：
-
-```text
-/admin
-```
-
-例如修改为：
-
-```text
-/control
-```
-
-那么后台入口就是：
-
-```text
-https://你的域名/control
-```
+**记住：SUB 放来源，URL 给客户端使用。**
 
 ---
 
 ## 🔗 订阅地址示例
 
-假设你的域名：
+假设域名为 `sub.example.com`，链接路径为 `japan`：
 
-```text
-sub.example.com
-```
-
-创建了一个名为：
-
-```text
-Japan
-```
-
-的订阅链接，路径为：
-
-```text
-japan
-```
-
-那么：
-
-### 智能自适应
-
-```text
-https://sub.example.com/japan
-```
-
-### Base64
-
-```text
-https://sub.example.com/japan?b64
-```
-
-### Clash
-
-```text
-https://sub.example.com/japan?clash
-```
-
-### Sing-box
-
-```text
-https://sub.example.com/japan?sb
-```
-
-### Surge
-
-```text
-https://sub.example.com/japan?surge
-```
-
-### Loon
-
-```text
-https://sub.example.com/japan?loon
-```
+| 客户端格式 | 订阅地址 |
+|---|---|
+| 自适应 | `https://sub.example.com/japan` |
+| Base64 | `https://sub.example.com/japan?b64` |
+| Clash | `https://sub.example.com/japan?clash` |
+| Sing-box | `https://sub.example.com/japan?sb` |
+| Surge | `https://sub.example.com/japan?surge` |
+| Loon | `https://sub.example.com/japan?loon` |
 
 ---
 
 ## 🔄 数据结构
 
-项目使用一个 KV Namespace，通过不同 Key 保存不同类型的数据。
+项目使用一个 KV Namespace 保存配置。一般无需手动修改：
 
-主要结构：
+| 数据 | 用途 |
+|---|---|
+| `CONFIG.json` | 全局设置 |
+| `SUB:<id>` | 订阅来源和节点 |
+| `URL:<path>` | 对外使用的订阅链接 |
 
-```text
-CONFIG.json
-SUB:<id>
-URL:<path>
-```
-
-其中：
-
-```text
-CONFIG.json
-```
-
-用于保存全局配置。
-
-```text
-SUB:<id>
-```
-
-用于保存聚合节点配置。
-
-```text
-URL:<path>
-```
-
-用于保存公开订阅链接配置。
-
-`SUB:<id>` 中的更新时间字段示例：
+更新时间设置示例：
 
 ```json
 {
@@ -608,61 +143,22 @@ URL:<path>
 }
 ```
 
-`UPDATE` 的单位始终是分钟，生成订阅响应时才会转换为秒；当 `UPDATE_ENABLE` 为 `false` 时，不会发送 `Profile-Update-Interval`。
-
-这种结构允许：
-
-```text
-一个 SUB → 多个订阅链接
-
-一个订阅链接 → 多个 SUB
-```
-
-从而实现灵活的多订阅组合。
+`UPDATE` 单位是分钟。关闭 `UPDATE_ENABLE` 后，不会向客户端发送自动更新时间提示。
 
 ---
 
 ## ⚠️ 注意事项
 
-- 当前版本**没有必填环境变量**。
-- Cloudflare KV Binding 名称必须为 `KV`。
-- 如果需要网页后台保存 SUB、订阅链接和配置，必须正确绑定 KV。
-- 修改 KV Binding 后需要重新部署，使绑定配置生效。
-- 请妥善保管管理员账号密码。
-- 管理员入口路径修改后，旧入口将不再作为后台入口。
-- 订阅链接属于公开访问地址，请不要在订阅链接名称或节点备注中放置敏感信息。
-- Cloudflare KV 存在最终一致性，后台已经针对创建、编辑、删除操作进行了前端实时状态更新，但不同 Cloudflare 节点之间的数据同步仍可能存在短暂延迟。
+| 提醒 | 说明 |
+|---|---|
+| KV 绑定 | 必须绑定一个 KV Namespace，变量名填写 `KV`；无需配置环境变量 |
+| 修改绑定 | 修改后重新部署 |
+| 管理员密码 | 请妥善保管 |
+| 管理员路径 | 修改后使用新路径登录 |
+| 订阅隐私 | 订阅链接可公开访问，名称和节点备注不要填写敏感信息 |
+| 数据同步 | Cloudflare KV 跨区域同步可能有短暂延迟 |
 
 ---
-
-## 📌 项目定位
-
-CF-SUBS 的核心结构可以简单理解为：
-
-```text
-                ┌─────────────┐
-                │     SUB     │
-                │  聚合节点配置 │
-                └──────┬──────┘
-                       │
-              ┌────────┼────────┐
-              │        │        │
-              ▼        ▼        ▼
-            URL A    URL B    URL C
-           订阅链接  订阅链接  订阅链接
-              │        │        │
-              ▼        ▼        ▼
-           客户端    客户端    客户端
-```
-
-**SUB 负责聚合来源。**
-
-**URL 负责对外提供订阅地址。**
-
-两者相互独立、灵活组合。
-
----
-
 ## ⭐ 支持项目
 
 如果 CF-SUBS 对你有帮助，欢迎给项目点一个 Star。
