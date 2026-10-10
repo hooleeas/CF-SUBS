@@ -475,7 +475,7 @@ async function getBackendStatus(api, config, protocol, hasCustomApi, hasCustomCo
         guestApiCss = 'status-ok';
     } else if (hasCustomApi && !customApiOk && defaultApiOk) {
         adminApiHtml = `⚠️SUBAPI无效 已切换为默认配置 ✅默认值可用`;
-        guestApiHtml = `✅SUBAPI状态正常 (${escapeHTML(defaultApiVersion)})`;
+        guestApiHtml = `✅SUBAPI状态  (${escapeHTML(defaultApiVersion)})`;
         finalApiUrl = `${defaultSubProtocol}://${defaultSubConverter}`;
         adminApiCss = 'status-warn';
         guestApiCss = 'status-ok';
@@ -3098,6 +3098,7 @@ async function saveConfig(button,type){
  }
  if(statusElem)statusElem.textContent='';
 
+ let backendCheck='';
  AdminUI.setButtonBusy(button,true,'保存中...');
 
  try{
@@ -3128,6 +3129,11 @@ async function saveConfig(button,type){
      throw new Error('不支持的配置类型');
    }
 
+   backendCheck=type==='subapi'?'api':type==='subconfig'?'config':'';
+   if(backendCheck){
+     setBackendStatusPending(backendCheck,backendCheck==='api'?settings.subApi:settings.subConfig);
+   }
+
    const response=await fetch(window.location.pathname,{
      method:'POST',
      headers:{'Content-Type':'application/json'},
@@ -3150,7 +3156,7 @@ async function saveConfig(button,type){
    if(type==='subapi')closeSubApiModal();
    if(type==='subconfig')closeSubConfigModal();
    if(type==='noads')closeNoAdsModal();
-   if(type==='subapi'||type==='subconfig')await refreshBackendStatus();
+   if(backendCheck)refreshBackendStatus(backendCheck);
    if(type==='subname'||isFake){
      updateAdminTitle(document.getElementById('config-subname')?.value||'');
    }
@@ -3166,6 +3172,7 @@ async function saveConfig(button,type){
    }
  }catch(err){
    showToast('保存失败: '+err.message,true);
+   if(backendCheck)refreshBackendStatus(backendCheck);
  }finally{
    AdminUI.setButtonBusy(button,false);
  }
@@ -3566,19 +3573,65 @@ document.querySelectorAll('.modal-overlay').forEach(function(modal){
 
 const backendStatusTimers={api:null,config:null};
 const backendStatusChecking={api:false,config:false};
+const backendStatusQueued={api:false,config:false};
+const backendStatusGeneration={api:0,config:0};
 
 function backendStatusIsAvailable(statusElement){
  return !!statusElement && !statusElement.classList.contains('status-error');
 }
 
+function backendDisplayUrl(check,value){
+ const raw=String(value||'').trim();
+ if(check==='config')return raw||${JSON.stringify(defaultSubConfig)};
+ if(!raw)return ${JSON.stringify(`${defaultSubProtocol}://${defaultSubConverter}`)};
+ const match=raw.match(/^(https?):\\/\\//i);
+ const protocol=match?match[1].toLowerCase():'https';
+ const host=raw.replace(/^https?:\\/\\//i,'').replace(/\\/+$/,'');
+ return host?protocol+'://'+host:${JSON.stringify(`${defaultSubProtocol}://${defaultSubConverter}`)};
+}
+
+function setBackendStatusPending(check,value){
+ backendStatusGeneration[check]++;
+ const isApi=check==='api';
+ const statusElement=document.getElementById(isApi?'subapi-status':'subconfig-status');
+ const urlElement=document.getElementById(isApi?'subapi-url':'subconfig-url');
+ const url=backendDisplayUrl(check,value);
+ if(statusElement){
+  statusElement.className='status-indicator status-warn';
+  statusElement.textContent='⏳ '+(isApi?'SUBAPI':'SUBCONFIG')+'状态检测中';
+ }
+ if(urlElement){
+  urlElement.textContent=url;
+  try{
+   const parsed=new URL(url);
+   if(parsed.protocol==='http:'||parsed.protocol==='https:'){
+    urlElement.href=parsed.href;
+    urlElement.removeAttribute('aria-disabled');
+   }else{
+    urlElement.removeAttribute('href');
+    urlElement.setAttribute('aria-disabled','true');
+   }
+  }catch{
+   urlElement.removeAttribute('href');
+   urlElement.setAttribute('aria-disabled','true');
+  }
+ }
+}
+
 async function refreshBackendStatus(check){
- if(backendStatusChecking[check])return false;
+ if(backendStatusChecking[check]){
+  backendStatusQueued[check]=true;
+  return false;
+ }
  backendStatusChecking[check]=true;
+ backendStatusQueued[check]=false;
+ const generation=backendStatusGeneration[check];
  try{
     const statusUrl=window.location.pathname+'/status?check='+check;
      const response=await fetch(statusUrl,{cache:'no-store'});
      if(!response.ok)throw new Error('状态检查失败（HTTP '+response.status+'）');
      const status=await response.json();
+     if(generation!==backendStatusGeneration[check])return false;
      const isApi=check==='api';
      const statusElement=document.getElementById(isApi?'subapi-status':'subconfig-status');
      const urlElement=document.getElementById(isApi?'subapi-url':'subconfig-url');
@@ -3594,10 +3647,15 @@ async function refreshBackendStatus(check){
      }
      return available;
  }catch(error){
+   if(generation!==backendStatusGeneration[check])return false;
    console.warn('管理面板状态刷新失败:',error);
    return false;
  }finally{
    backendStatusChecking[check]=false;
+   if(backendStatusQueued[check]){
+    backendStatusQueued[check]=false;
+    window.setTimeout(function(){refreshBackendStatus(check)},0);
+   }
  }
 }
 
